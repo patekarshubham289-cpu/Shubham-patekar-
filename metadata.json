@@ -1,0 +1,6 @@
+{
+  "name": "HealthCare+",
+  "description": "Premium luxury AI-powered medical app featuring AI medicine box scanner, Gemini health assistant, appointments, vital records, nearby hospital locator & SOS.",
+  "requestFramePermissions": ["camera", "microphone", "geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
