@@ -3,16 +3,8 @@ import { useApp } from '../../context/AppContext';
 import { APIProvider, Map, AdvancedMarker, Pin, InfoWindow } from '@vis.gl/react-google-maps';
 import {
   MapPin,
-  Hospital,
-  Pill,
-  Droplet,
-  Activity,
-  Ambulance,
   Phone,
-  Navigation,
-  Star,
-  Clock,
-  ShieldCheck
+  Navigation
 } from 'lucide-react';
 
 export const MapsView: React.FC = () => {
@@ -30,18 +22,11 @@ export const MapsView: React.FC = () => {
   const categories = ['All', 'Hospital', 'Pharmacy', 'Blood Bank', 'Diagnostic', 'Ambulance'];
 
   const filteredPlaces = nearbyPlaces.filter(
-    p => selectedCategory === 'All' || p.category === selectedCategory
+    (p) => selectedCategory === 'All' || p.category === selectedCategory
   );
-
-  const handleDirections = (place: any) => {
-    const url = `https://www.google.com/maps/dir/?api=1&destination=${place.lat},${place.lng}`;
-    window.open(url, '_blank');
-    showToast(`Opening Google Maps turn-by-turn navigation to ${place.name}`, 'info');
-  };
 
   return (
     <div className="space-y-6 pb-24 text-white">
-      
       {/* Header */}
       <div className="p-6 rounded-3xl bg-gradient-to-br from-[#181818] via-[#1c1825] to-[#181818] border border-purple-500/30 flex items-center justify-between shadow-2xl">
         <div className="flex items-center gap-3">
@@ -62,7 +47,7 @@ export const MapsView: React.FC = () => {
 
       {/* Category Pills Filter */}
       <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
-        {categories.map(cat => (
+        {categories.map((cat) => (
           <button
             key={cat}
             onClick={() => setSelectedCategory(cat)}
@@ -80,7 +65,6 @@ export const MapsView: React.FC = () => {
       {/* Map Container & Interactive View */}
       <div className="p-4 rounded-3xl bg-[#181818] border border-white/10 space-y-4 shadow-2xl">
         <div className="relative w-full h-[380px] rounded-2xl overflow-hidden border border-white/10 bg-neutral-900">
-          
           {hasValidKey ? (
             <APIProvider apiKey={API_KEY} version="weekly">
               <Map
@@ -119,14 +103,13 @@ export const MapsView: React.FC = () => {
               <MapPin className="w-12 h-12 text-purple-400 mb-2 animate-bounce" />
               <h3 className="text-base font-extrabold text-white">Interactive Medical Locator Active</h3>
               <p className="text-xs text-neutral-400 max-w-md mt-1">
-                Showing real-time distance calculations for emergency hospitals & pharmacies nearby.
+                Showing emergency hospitals, pharmacies & blood banks below.
               </p>
               <p className="text-[10px] text-amber-400 mt-2 font-semibold">
-                (Google Maps API Key secret optional - Full distance list available below)
+                Set GOOGLE_MAPS_PLATFORM_KEY to enable the embedded Google Map view
               </p>
             </div>
           )}
-
         </div>
 
         {/* Places List Cards */}
@@ -149,7 +132,8 @@ export const MapsView: React.FC = () => {
                 </div>
                 <h4 className="text-sm font-bold text-white">{place.name}</h4>
                 <p className="text-xs text-neutral-400 flex items-center gap-1">
-                  <MapPin className="w-3.5 h-3.5 text-neutral-500" /> {place.address} • <span className="text-purple-400 font-bold">{place.distanceKm} km away</span>
+                  <MapPin className="w-3.5 h-3.5 text-neutral-500" /> {place.address} •{' '}
+                  <span className="text-purple-400 font-bold">{place.distanceKm} km away</span>
                 </p>
               </div>
 
@@ -161,20 +145,22 @@ export const MapsView: React.FC = () => {
                   <Phone className="w-3.5 h-3.5 text-emerald-400" /> Call
                 </a>
 
-                <button
-                  onClick={() => handleDirections(place)}
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${place.lat},${place.lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() =>
+                    showToast(`Opening Google Maps directions to ${place.name}`, 'info')
+                  }
                   className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-md transition"
                 >
                   <Navigation className="w-3.5 h-3.5" /> Navigate
-                </button>
+                </a>
               </div>
-
             </div>
           ))}
         </div>
-
       </div>
-
     </div>
   );
 };

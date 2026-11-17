@@ -1,0 +1,545 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Startup connection check document
+    match /test/connection {
+      allow get: if true;
+    }
+
+    // =========================================================================
+    // GLOBAL HARDENED PRIMITIVES
+    // =========================================================================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isEmailVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isVerifiedOwner(userId) {
+      return isOwner(userId) && isEmailVerified();
+    }
+
+    function isAdmin() {
+      return isEmailVerified() && (
+        request.auth.token.admin == true ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'patekarshubham07@gmail.com'
+      );
+    }
+
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    function isValidStringList(listVal, maxItems, maxItemLen) {
+      return listVal is list &&
+        listVal.size() <= maxItems &&
+        (listVal.size() == 0 || isValidString(listVal[0], 0, maxItemLen));
+    }
+
+    // =========================================================================
+    // ENTITY VALIDATION BLUEPRINTS
+    // =========================================================================
+    function isValidProfile(data) {
+      return data.keys().hasAll(['userId', 'name', 'email', 'role', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'userId', 'name', 'email', 'phone', 'avatar', 'bloodGroup', 'age',
+          'gender', 'heightCm', 'weightKg', 'bmi', 'medicalConditions',
+          'allergies', 'isDonor', 'role', 'settings', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        isValidString(data.name, 1, 120) &&
+        isValidString(data.email, 3, 254) &&
+        data.role in ['patient', 'admin', 'doctor'] &&
+        (!('phone' in data) || isValidString(data.phone, 0, 32)) &&
+        (!('avatar' in data) || isValidString(data.avatar, 0, 500)) &&
+        (!('bloodGroup' in data) || isValidString(data.bloodGroup, 0, 10)) &&
+        (!('age' in data) || (data.age is int && data.age >= 0 && data.age <= 130)) &&
+        (!('gender' in data) || data.gender in ['Male', 'Female', 'Other']) &&
+        (!('heightCm' in data) || (data.heightCm is number && data.heightCm >= 30 && data.heightCm <= 300)) &&
+        (!('weightKg' in data) || (data.weightKg is number && data.weightKg >= 1 && data.weightKg <= 500)) &&
+        (!('bmi' in data) || (data.bmi is number && data.bmi >= 5 && data.bmi <= 100)) &&
+        (!('medicalConditions' in data) || isValidStringList(data.medicalConditions, 30, 120)) &&
+        (!('allergies' in data) || isValidStringList(data.allergies, 30, 120)) &&
+        (!('isDonor' in data) || data.isDonor is bool) &&
+        (!('settings' in data) || (
+          data.settings is map &&
+          data.settings.keys().hasOnly([
+            'theme', 'language', 'pushNotifications', 'smsAlerts',
+            'emailAlerts', 'biometricsEnabled', 'dataSaver', 'locationAccess'
+          ]) &&
+          (!('theme' in data.settings) || data.settings.theme in ['dark', 'light']) &&
+          (!('language' in data.settings) || data.settings.language in ['English', 'Spanish', 'French', 'German', 'Hindi']) &&
+          (!('pushNotifications' in data.settings) || data.settings.pushNotifications is bool) &&
+          (!('smsAlerts' in data.settings) || data.settings.smsAlerts is bool) &&
+          (!('emailAlerts' in data.settings) || data.settings.emailAlerts is bool) &&
+          (!('biometricsEnabled' in data.settings) || data.settings.biometricsEnabled is bool) &&
+          (!('dataSaver' in data.settings) || data.settings.dataSaver is bool) &&
+          (!('locationAccess' in data.settings) || data.settings.locationAccess is bool)
+        )) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidHealthRecord(data) {
+      return data.keys().hasAll([
+          'userId', 'timestamp', 'heartRate', 'bloodPressureSys',
+          'bloodPressureDia', 'bloodSugar', 'spO2', 'mood', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'timestamp', 'heartRate', 'bloodPressureSys',
+          'bloodPressureDia', 'bloodSugar', 'bmi', 'weightKg',
+          'temperatureC', 'spO2', 'waterIntakeMl', 'sleepHours',
+          'mood', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        isValidString(data.timestamp, 10, 64) &&
+        data.heartRate is number && data.heartRate >= 20 && data.heartRate <= 260 &&
+        data.bloodPressureSys is number && data.bloodPressureSys >= 40 && data.bloodPressureSys <= 300 &&
+        data.bloodPressureDia is number && data.bloodPressureDia >= 20 && data.bloodPressureDia <= 200 &&
+        data.bloodSugar is number && data.bloodSugar >= 20 && data.bloodSugar <= 800 &&
+        data.spO2 is number && data.spO2 >= 50 && data.spO2 <= 100 &&
+        (!('bmi' in data) || (data.bmi is number && data.bmi >= 5 && data.bmi <= 100)) &&
+        (!('weightKg' in data) || (data.weightKg is number && data.weightKg >= 1 && data.weightKg <= 500)) &&
+        (!('temperatureC' in data) || (data.temperatureC is number && data.temperatureC >= 30 && data.temperatureC <= 45)) &&
+        (!('waterIntakeMl' in data) || (data.waterIntakeMl is number && data.waterIntakeMl >= 0 && data.waterIntakeMl <= 20000)) &&
+        (!('sleepHours' in data) || (data.sleepHours is number && data.sleepHours >= 0 && data.sleepHours <= 24)) &&
+        data.mood in ['Excellent', 'Good', 'Neutral', 'Fatigued', 'Unwell'] &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidDoctor(data) {
+      return data.keys().hasAll([
+          'name', 'title', 'specialty', 'feeUsd', 'hospital', 'verified', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'name', 'title', 'specialty', 'experienceYears', 'rating', 'reviewCount',
+          'feeUsd', 'photo', 'address', 'lat', 'lng', 'hospital',
+          'availableSlots', 'bio', 'languages', 'verified', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidString(data.name, 2, 120) &&
+        isValidString(data.title, 2, 120) &&
+        isValidString(data.specialty, 2, 80) &&
+        data.feeUsd is number && data.feeUsd >= 0 && data.feeUsd <= 10000 &&
+        isValidString(data.hospital, 2, 160) &&
+        data.verified is bool &&
+        (!('experienceYears' in data) || (data.experienceYears is int && data.experienceYears >= 0 && data.experienceYears <= 80)) &&
+        (!('rating' in data) || (data.rating is number && data.rating >= 0 && data.rating <= 5)) &&
+        (!('reviewCount' in data) || (data.reviewCount is int && data.reviewCount >= 0)) &&
+        (!('photo' in data) || isValidString(data.photo, 0, 500)) &&
+        (!('address' in data) || isValidString(data.address, 0, 240)) &&
+        (!('lat' in data) || (data.lat is number && data.lat >= -90 && data.lat <= 90)) &&
+        (!('lng' in data) || (data.lng is number && data.lng >= -180 && data.lng <= 180)) &&
+        (!('availableSlots' in data) || isValidStringList(data.availableSlots, 24, 32)) &&
+        (!('bio' in data) || isValidString(data.bio, 0, 1000)) &&
+        (!('languages' in data) || isValidStringList(data.languages, 15, 40)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAppointment(data) {
+      return data.keys().hasAll([
+          'userId', 'doctorId', 'doctorName', 'doctorSpecialty', 'date',
+          'timeSlot', 'type', 'status', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'doctorId', 'doctorName', 'doctorSpecialty', 'doctorPhoto',
+          'date', 'timeSlot', 'type', 'status', 'symptoms', 'meetingLink',
+          'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        isValidId(data.doctorId) &&
+        isValidString(data.doctorName, 1, 120) &&
+        isValidString(data.doctorSpecialty, 1, 80) &&
+        isValidString(data.date, 4, 32) &&
+        isValidString(data.timeSlot, 2, 32) &&
+        data.type in ['In-Person', 'Video Consultation'] &&
+        data.status in ['Upcoming', 'Completed', 'Cancelled'] &&
+        (!('doctorPhoto' in data) || isValidString(data.doctorPhoto, 0, 500)) &&
+        (!('symptoms' in data) || isValidString(data.symptoms, 0, 1000)) &&
+        (!('meetingLink' in data) || isValidString(data.meetingLink, 0, 500)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidMedicineReminder(data) {
+      return data.keys().hasAll([
+          'userId', 'name', 'dosage', 'frequency', 'timeSlots',
+          'instructions', 'pillsLeft', 'takenToday', 'active', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'name', 'dosage', 'frequency', 'timeSlots',
+          'instructions', 'pillsLeft', 'takenToday', 'active', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        isValidString(data.name, 1, 160) &&
+        isValidString(data.dosage, 1, 80) &&
+        data.frequency in ['Daily', 'Weekly', 'As Needed'] &&
+        isValidStringList(data.timeSlots, 12, 32) &&
+        data.instructions in ['Before Food', 'After Food', 'With Water'] &&
+        data.pillsLeft is int && data.pillsLeft >= 0 && data.pillsLeft <= 5000 &&
+        data.takenToday is bool &&
+        data.active is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidMedicineScan(data) {
+      return data.keys().hasAll([
+          'userId', 'timestamp', 'name', 'composition', 'dosage', 'saved', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'timestamp', 'name', 'composition', 'uses', 'benefits',
+          'sideEffects', 'dosage', 'warnings', 'storage', 'alternativeMedicines',
+          'priceRange', 'disclaimer', 'saved', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        isValidString(data.timestamp, 10, 64) &&
+        isValidString(data.name, 1, 160) &&
+        isValidString(data.composition, 0, 500) &&
+        isValidString(data.dosage, 0, 500) &&
+        data.saved is bool &&
+        (!('uses' in data) || isValidStringList(data.uses, 20, 200)) &&
+        (!('benefits' in data) || isValidStringList(data.benefits, 20, 200)) &&
+        (!('sideEffects' in data) || isValidStringList(data.sideEffects, 20, 200)) &&
+        (!('warnings' in data) || isValidStringList(data.warnings, 20, 250)) &&
+        (!('storage' in data) || isValidString(data.storage, 0, 300)) &&
+        (!('alternativeMedicines' in data) || (
+          data.alternativeMedicines is list &&
+          data.alternativeMedicines.size() <= 10
+        )) &&
+        (!('priceRange' in data) || isValidString(data.priceRange, 0, 100)) &&
+        (!('disclaimer' in data) || isValidString(data.disclaimer, 0, 500)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidChatMessage(data) {
+      return data.keys().hasAll(['userId', 'sender', 'text', 'timestamp', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['userId', 'sender', 'text', 'category', 'timestamp', 'createdAt', 'updatedAt']) &&
+        isValidId(data.userId) &&
+        data.sender in ['user', 'assistant'] &&
+        isValidString(data.text, 1, 8000) &&
+        isValidString(data.timestamp, 10, 64) &&
+        (!('category' in data) || data.category in ['general', 'symptom', 'medicine', 'diet', 'report']) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidEmergencyContact(data) {
+      return data.keys().hasAll(['userId', 'name', 'relation', 'phone', 'isPrimary', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['userId', 'name', 'relation', 'phone', 'isPrimary', 'createdAt', 'updatedAt']) &&
+        isValidId(data.userId) &&
+        isValidString(data.name, 1, 120) &&
+        isValidString(data.relation, 1, 80) &&
+        isValidString(data.phone, 3, 32) &&
+        data.isPrimary is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['userId', 'title', 'message', 'type', 'read', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['userId', 'title', 'message', 'type', 'read', 'appointmentId', 'createdAt', 'updatedAt']) &&
+        isValidId(data.userId) &&
+        isValidString(data.title, 1, 120) &&
+        isValidString(data.message, 1, 500) &&
+        data.type in ['reminder', 'appointment', 'sos', 'system'] &&
+        data.read is bool &&
+        (!('appointmentId' in data) || isValidId(data.appointmentId)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidEmergencyEvent(data) {
+      return data.keys().hasAll([
+          'userId', 'sosId', 'userLocation', 'status', 'ambulanceEtaMinutes',
+          'dispatchedUnit', 'notifiedContactsCount', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId', 'patientName', 'sosId', 'userLocation', 'status', 'ambulanceEtaMinutes',
+          'dispatchedUnit', 'notifiedContactsCount', 'note', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        isValidId(data.sosId) &&
+        (!('patientName' in data) || isValidString(data.patientName, 0, 120)) &&
+        isValidString(data.userLocation, 1, 240) &&
+        data.status in ['DISPATCHED', 'EN_ROUTE', 'RESOLVED', 'CANCELLED'] &&
+        data.ambulanceEtaMinutes is int && data.ambulanceEtaMinutes >= 0 && data.ambulanceEtaMinutes <= 240 &&
+        isValidString(data.dispatchedUnit, 1, 120) &&
+        data.notifiedContactsCount is int && data.notifiedContactsCount >= 0 && data.notifiedContactsCount <= 50 &&
+        (!('note' in data) || isValidString(data.note, 0, 500)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // =========================================================================
+    // COLLECTION RULES
+    // =========================================================================
+
+    match /admins/{userId} {
+      allow get: if isValidId(userId) && (isVerifiedOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create, update, delete: if isAdmin() && isValidId(userId);
+    }
+
+    match /profiles/{userId} {
+      allow get: if isValidId(userId) && (isVerifiedOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId) &&
+        isVerifiedOwner(userId) &&
+        isValidProfile(incoming()) &&
+        incoming().userId == userId &&
+        incoming().role == 'patient' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(userId) &&
+        isValidProfile(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          isAdmin() || (
+            isVerifiedOwner(userId) &&
+            incoming().role == existing().role &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'phone', 'avatar', 'bloodGroup', 'age', 'gender',
+              'heightCm', 'weightKg', 'bmi', 'medicalConditions', 'allergies',
+              'isDonor', 'settings', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isAdmin() && isValidId(userId);
+    }
+
+    match /health_records/{recordId} {
+      allow get: if isValidId(recordId) && isEmailVerified() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isEmailVerified() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(recordId) &&
+        isEmailVerified() &&
+        isValidHealthRecord(incoming()) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(recordId) &&
+        isEmailVerified() &&
+        isValidHealthRecord(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          isAdmin() || (
+            existing().userId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'heartRate', 'bloodPressureSys', 'bloodPressureDia', 'bloodSugar',
+              'bmi', 'weightKg', 'temperatureC', 'spO2', 'waterIntakeMl',
+              'sleepHours', 'mood', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isValidId(recordId) && isEmailVerified() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    match /doctors/{doctorId} {
+      allow get: if isValidId(doctorId) && isEmailVerified();
+      allow list: if isEmailVerified() && (resource.data.verified == true || isAdmin());
+      allow create: if isValidId(doctorId) &&
+        isAdmin() &&
+        isValidDoctor(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(doctorId) &&
+        isAdmin() &&
+        isValidDoctor(incoming()) &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+      allow delete: if isValidId(doctorId) && isAdmin();
+    }
+
+    match /appointments/{appointmentId} {
+      allow get: if isValidId(appointmentId) && isEmailVerified() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isEmailVerified() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(appointmentId) &&
+        isEmailVerified() &&
+        isValidAppointment(incoming()) &&
+        incoming().userId == request.auth.uid &&
+        incoming().status == 'Upcoming' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/doctors/$(incoming().doctorId));
+      allow update: if isValidId(appointmentId) &&
+        isEmailVerified() &&
+        isValidAppointment(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().doctorId == existing().doctorId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          isAdmin() || (
+            existing().userId == request.auth.uid &&
+            existing().status == 'Upcoming' &&
+            incoming().status in ['Upcoming', 'Cancelled', 'Completed'] &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'symptoms', 'date', 'timeSlot', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(appointmentId) && isAdmin();
+    }
+
+    match /medicine_reminders/{reminderId} {
+      allow get: if isValidId(reminderId) && isEmailVerified() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isEmailVerified() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(reminderId) &&
+        isEmailVerified() &&
+        isValidMedicineReminder(incoming()) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(reminderId) &&
+        isEmailVerified() &&
+        isValidMedicineReminder(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          isAdmin() || (
+            existing().userId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'name', 'dosage', 'frequency', 'timeSlots', 'instructions',
+              'pillsLeft', 'takenToday', 'active', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isValidId(reminderId) && isEmailVerified() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    match /medicine_scan_history/{scanId} {
+      allow get: if isValidId(scanId) && isEmailVerified() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isEmailVerified() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(scanId) &&
+        isEmailVerified() &&
+        isValidMedicineScan(incoming()) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(scanId) &&
+        isEmailVerified() &&
+        isValidMedicineScan(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          isAdmin() || (
+            existing().userId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['saved', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(scanId) && isEmailVerified() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    match /chat_history/{messageId} {
+      allow get: if isValidId(messageId) && isEmailVerified() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isEmailVerified() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(messageId) &&
+        isEmailVerified() &&
+        isValidChatMessage(incoming()) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isAdmin() && isValidId(messageId) && isValidChatMessage(incoming()) && incoming().createdAt == existing().createdAt && incoming().updatedAt == request.time;
+      allow delete: if isValidId(messageId) && isEmailVerified() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    match /emergency_contacts/{contactId} {
+      allow get: if isValidId(contactId) && isEmailVerified() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isEmailVerified() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(contactId) &&
+        isEmailVerified() &&
+        isValidEmergencyContact(incoming()) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(contactId) &&
+        isEmailVerified() &&
+        isValidEmergencyContact(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          isAdmin() || (
+            existing().userId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['name', 'relation', 'phone', 'isPrimary', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(contactId) && isEmailVerified() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    match /notifications/{notificationId} {
+      allow get: if isValidId(notificationId) && isEmailVerified() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isEmailVerified() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(notificationId) &&
+        isEmailVerified() &&
+        isValidNotification(incoming()) &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(notificationId) &&
+        isEmailVerified() &&
+        isValidNotification(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          isAdmin() || (
+            existing().userId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['read', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(notificationId) && isEmailVerified() && (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    match /emergency_events/{eventId} {
+      allow get: if isValidId(eventId) && isEmailVerified() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isEmailVerified() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(eventId) &&
+        isEmailVerified() &&
+        isValidEmergencyEvent(incoming()) &&
+        incoming().userId == request.auth.uid &&
+        incoming().status == 'DISPATCHED' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(eventId) &&
+        isEmailVerified() &&
+        isValidEmergencyEvent(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().sosId == existing().sosId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          isAdmin() || (
+            existing().userId == request.auth.uid &&
+            existing().status in ['DISPATCHED', 'EN_ROUTE'] &&
+            incoming().status in ['EN_ROUTE', 'CANCELLED', 'RESOLVED'] &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'note', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(eventId) && isAdmin();
+    }
+  }
+}

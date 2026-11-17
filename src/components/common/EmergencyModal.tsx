@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useApp } from '../../context/AppContext';
-import { ShieldAlert, Phone, MapPin, Ambulance, AlertTriangle, CheckCircle2, X } from 'lucide-react';
+import { ShieldAlert, Phone, Ambulance, CheckCircle2, X } from 'lucide-react';
 
 export const EmergencyModal: React.FC = () => {
   const { isSosModalOpen, closeSosModal, triggerSosDispatch, user, sosDispatched } = useApp();
@@ -8,15 +8,25 @@ export const EmergencyModal: React.FC = () => {
   const [isCounting, setIsCounting] = useState<boolean>(false);
   const [sosDetails, setSosDetails] = useState<any>(null);
 
+  const handleDispatch = useCallback(async () => {
+    try {
+      const res = await triggerSosDispatch();
+      setSosDetails(res);
+    } catch {
+      // Error toast is handled inside triggerSosDispatch
+    }
+  }, [triggerSosDispatch]);
+
   useEffect(() => {
     if (isSosModalOpen && !sosDispatched) {
       setIsCounting(true);
       setCountdown(3);
+      setSosDetails(null);
     }
   }, [isSosModalOpen, sosDispatched]);
 
   useEffect(() => {
-    let timer: any;
+    let timer: ReturnType<typeof setTimeout>;
     if (isCounting && countdown > 0) {
       timer = setTimeout(() => {
         setCountdown((prev) => prev - 1);
@@ -26,12 +36,7 @@ export const EmergencyModal: React.FC = () => {
       handleDispatch();
     }
     return () => clearTimeout(timer);
-  }, [isCounting, countdown]);
-
-  const handleDispatch = async () => {
-    const res = await triggerSosDispatch();
-    setSosDetails(res);
-  };
+  }, [isCounting, countdown, handleDispatch]);
 
   const handleCancelCountdown = () => {
     setIsCounting(false);
@@ -43,12 +48,10 @@ export const EmergencyModal: React.FC = () => {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in">
       <div className="relative w-full max-w-md bg-[#181818] border border-red-500/30 rounded-3xl p-6 shadow-2xl text-white overflow-hidden">
-        
-        {/* Glow backdrop effect */}
         <div className="absolute -top-24 -left-24 w-48 h-48 bg-red-600/20 rounded-full blur-3xl pointer-events-none"></div>
 
         <button
-          onClick={closeSosModal}
+          onClick={handleCancelCountdown}
           className="absolute top-4 right-4 p-2 rounded-full bg-neutral-800 text-neutral-400 hover:text-white transition"
         >
           <X className="w-5 h-5" />
@@ -59,14 +62,11 @@ export const EmergencyModal: React.FC = () => {
             <ShieldAlert className="w-10 h-10" />
           </div>
 
-          <h2 className="text-2xl font-black text-white tracking-tight">
-            EMERGENCY SOS ALERT
-          </h2>
+          <h2 className="text-2xl font-black text-white tracking-tight">EMERGENCY SOS ALERT</h2>
           <p className="text-xs text-neutral-400 mt-1">
             Dispatching live GPS location to nearest hospital & emergency contacts
           </p>
 
-          {/* Countdown view */}
           {isCounting && (
             <div className="my-6 p-6 rounded-2xl bg-red-950/40 border border-red-500/30 text-center">
               <span className="text-6xl font-black text-red-400 animate-ping inline-block">
@@ -84,7 +84,6 @@ export const EmergencyModal: React.FC = () => {
             </div>
           )}
 
-          {/* Dispatched view */}
           {sosDispatched && (
             <div className="my-6 p-5 rounded-2xl bg-emerald-950/30 border border-emerald-500/30 text-left space-y-3">
               <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
@@ -93,21 +92,26 @@ export const EmergencyModal: React.FC = () => {
               <div className="text-xs space-y-1.5 text-neutral-300">
                 <p className="flex justify-between">
                   <span className="text-neutral-400">Unit:</span>
-                  <span className="font-semibold text-white">{sosDetails?.dispatchedUnit || 'Metro Rapid Response #408'}</span>
+                  <span className="font-semibold text-white">
+                    {sosDetails?.dispatchedUnit || 'Metro Ambulance #408'}
+                  </span>
                 </p>
                 <p className="flex justify-between">
                   <span className="text-neutral-400">Estimated Arrival:</span>
-                  <span className="font-semibold text-emerald-400">~6 Minutes</span>
+                  <span className="font-semibold text-emerald-400">
+                    ~{sosDetails?.ambulanceEtaMinutes ?? 6} Minutes
+                  </span>
                 </p>
                 <p className="flex justify-between">
                   <span className="text-neutral-400">Contacts Alerted:</span>
-                  <span className="font-semibold text-white">{user.emergencyContacts.length} Contacts (SMS + Location)</span>
+                  <span className="font-semibold text-white">
+                    {user.emergencyContacts.length} Contacts
+                  </span>
                 </p>
               </div>
             </div>
           )}
 
-          {/* Emergency Hotline Buttons */}
           <div className="grid grid-cols-2 gap-3 mt-4">
             <a
               href="tel:911"
@@ -127,11 +131,13 @@ export const EmergencyModal: React.FC = () => {
             <p className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wider mb-2">
               Primary Emergency Contact
             </p>
-            {user.emergencyContacts[0] && (
+            {user.emergencyContacts[0] ? (
               <div className="flex items-center justify-between p-3 rounded-xl bg-neutral-900 border border-white/5">
                 <div>
                   <p className="text-xs font-bold text-white">{user.emergencyContacts[0].name}</p>
-                  <p className="text-[10px] text-neutral-400">{user.emergencyContacts[0].relation} • {user.emergencyContacts[0].phone}</p>
+                  <p className="text-[10px] text-neutral-400">
+                    {user.emergencyContacts[0].relation} • {user.emergencyContacts[0].phone}
+                  </p>
                 </div>
                 <a
                   href={`tel:${user.emergencyContacts[0].phone}`}
@@ -140,9 +146,12 @@ export const EmergencyModal: React.FC = () => {
                   Call
                 </a>
               </div>
+            ) : (
+              <p className="text-xs text-neutral-400">
+                No primary emergency contact configured. Add one in your Profile.
+              </p>
             )}
           </div>
-
         </div>
       </div>
     </div>

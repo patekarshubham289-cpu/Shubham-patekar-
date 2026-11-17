@@ -1,4 +1,49 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import {
+  User as FirebaseUser,
+  onAuthStateChanged,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  updateProfile as updateFirebaseAuthProfile,
+  signOut
+} from 'firebase/auth';
+import { auth, googleProvider, getAuthErrorMessage } from '../lib/firebase';
+import {
+  defaultSettings,
+  checkIsUserAdmin,
+  ensureUserProfile,
+  updateUserProfileDoc,
+  subscribeUserProfile,
+  subscribeHealthRecords,
+  createHealthRecord,
+  subscribeDoctors,
+  createDoctorDoc,
+  verifyDoctorDoc,
+  subscribeAppointments,
+  createAppointmentDoc,
+  updateAppointmentStatusDoc,
+  subscribeMedicineReminders,
+  createMedicineReminderDoc,
+  toggleReminderTakenDoc,
+  deleteMedicineReminderDoc,
+  subscribeScanHistory,
+  createScanHistoryDoc,
+  deleteScanHistoryDoc,
+  subscribeChatHistory,
+  createChatMessageDoc,
+  clearChatHistoryDocs,
+  subscribeEmergencyContacts,
+  createEmergencyContactDoc,
+  deleteEmergencyContactDoc,
+  subscribeNotifications,
+  createNotificationDoc,
+  markNotificationReadDoc,
+  subscribeEmergencyEvents,
+  createEmergencyEventDoc
+} from '../lib/firestoreService';
 import {
   UserProfile,
   VitalLog,
@@ -8,17 +53,12 @@ import {
   MedicineReminder,
   MedicineScanResult,
   ChatMessage,
+  EmergencyContact,
+  NotificationItem,
+  EmergencyEvent,
   SystemSettings
 } from '../types';
-import {
-  initialUserProfile,
-  initialVitalLogs,
-  initialDoctors,
-  initialNearbyPlaces,
-  initialReminders,
-  sampleScanResult,
-  sampleChatMessages
-} from '../data/initialData';
+import { initialDoctors, initialNearbyPlaces } from '../data/initialData';
 
 export type ActiveTab =
   | 'dashboard'
@@ -32,56 +72,102 @@ export type ActiveTab =
   | 'settings'
   | 'admin';
 
+const emptyUserProfile: UserProfile = {
+  id: '',
+  name: '',
+  email: '',
+  phone: '',
+  avatar: '',
+  bloodGroup: 'Unknown',
+  age: 30,
+  gender: 'Other',
+  heightCm: 170,
+  weightKg: 70,
+  bmi: 24.2,
+  medicalConditions: [],
+  allergies: [],
+  emergencyContacts: [],
+  isDonor: false,
+  role: 'patient',
+};
+
 interface AppContextType {
   // Auth & View state
+  firebaseUser: FirebaseUser | null;
+  authLoading: boolean;
+  dataLoading: boolean;
   isAuthenticated: boolean;
+  isEmailVerified: boolean;
+  isAdmin: boolean;
   activeTab: ActiveTab;
   setActiveTab: (tab: ActiveTab) => void;
   user: UserProfile;
-  login: (email: string) => void;
-  logout: () => void;
-  updateProfile: (updated: Partial<UserProfile>) => void;
+  getAuthToken: () => Promise<string | null>;
+
+  // Auth actions
+  registerWithEmail: (fullName: string, email: string, password: string) => Promise<void>;
+  loginWithEmail: (email: string, password: string) => Promise<void>;
+  loginWithGoogle: () => Promise<void>;
+  resendVerificationEmail: () => Promise<void>;
+  refreshVerificationStatus: () => Promise<boolean>;
+  sendPasswordReset: (email: string) => Promise<void>;
+  logout: () => Promise<void>;
+
+  // Profile & Emergency Contacts
+  updateProfile: (updated: Partial<UserProfile>) => Promise<void>;
+  addEmergencyContact: (contact: Omit<EmergencyContact, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  removeEmergencyContact: (id: string) => Promise<void>;
 
   // Health Vitals
   vitalLogs: VitalLog[];
-  latestVital: VitalLog;
-  addVitalLog: (log: Omit<VitalLog, 'id' | 'timestamp'>) => void;
-  healthScore: number;
+  latestVital: VitalLog | null;
+  addVitalLog: (log: Omit<VitalLog, 'id' | 'timestamp' | 'userId' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  healthScore: number | null;
 
   // Medicine Scanner History
   scanHistory: MedicineScanResult[];
-  addScanResult: (result: MedicineScanResult) => void;
-  removeScan: (id: string) => void;
+  addScanResult: (result: Omit<MedicineScanResult, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  removeScan: (id: string) => Promise<void>;
 
   // AI Chat
   chatMessages: ChatMessage[];
-  addChatMessage: (msg: Omit<ChatMessage, 'id' | 'timestamp'>) => void;
-  clearChat: () => void;
+  addChatMessage: (msg: Omit<ChatMessage, 'id' | 'timestamp' | 'userId' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  clearChat: () => Promise<void>;
 
   // Appointments & Doctors
   doctors: Doctor[];
   appointments: Appointment[];
-  bookAppointment: (doctorId: string, date: string, timeSlot: string, type: 'In-Person' | 'Video Consultation', symptoms?: string) => void;
-  cancelAppointment: (id: string) => void;
+  bookAppointment: (doctorId: string, date: string, timeSlot: string, type: 'In-Person' | 'Video Consultation', symptoms?: string) => Promise<void>;
+  cancelAppointment: (id: string) => Promise<void>;
+  seedDoctorDirectory: () => Promise<void>;
+  verifyDoctor: (doctorId: string) => Promise<void>;
 
   // Reminders
   reminders: MedicineReminder[];
-  toggleReminderTaken: (id: string) => void;
-  addReminder: (reminder: Omit<MedicineReminder, 'id' | 'takenToday'>) => void;
+  toggleReminderTaken: (id: string) => Promise<void>;
+  addReminder: (reminder: Omit<MedicineReminder, 'id' | 'takenToday' | 'userId' | 'createdAt' | 'updatedAt'>) => Promise<void>;
+  removeReminder: (id: string) => Promise<void>;
+
+  // Notifications
+  notifications: NotificationItem[];
+  markNotificationRead: (id: string) => Promise<void>;
+
+  // Emergency Events
+  emergencyEvents: EmergencyEvent[];
 
   // Places
   nearbyPlaces: NearbyPlace[];
 
   // Settings
   settings: SystemSettings;
-  updateSettings: (newSettings: Partial<SystemSettings>) => void;
+  updateSettings: (newSettings: Partial<SystemSettings>) => Promise<void>;
 
   // Emergency SOS State
   isSosModalOpen: boolean;
   openSosModal: () => void;
   closeSosModal: () => void;
   sosDispatched: boolean;
-  triggerSosDispatch: () => Promise<any>;
+  triggerSosDispatch: (note?: string) => Promise<any>;
 
   // Medical ID Modal
   isMedicalIdOpen: boolean;
@@ -95,182 +181,532 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
-  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
-  const [user, setUser] = useState<UserProfile>(initialUserProfile);
-  
-  const [vitalLogs, setVitalLogs] = useState<VitalLog[]>(initialVitalLogs);
-  const [scanHistory, setScanHistory] = useState<MedicineScanResult[]>([sampleScanResult]);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>(sampleChatMessages);
-  const [doctors] = useState<Doctor[]>(initialDoctors);
-  
-  const [appointments, setAppointments] = useState<Appointment[]>([
-    {
-      id: 'app_101',
-      doctorId: 'doc_1',
-      doctorName: 'Dr. Elena Rostova',
-      doctorSpecialty: 'Cardiology',
-      doctorPhoto: 'https://images.unsplash.com/photo-1559839734-2b71ea197ec2?auto=format&fit=crop&q=80&w=400',
-      date: new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0],
-      timeSlot: '11:30 AM',
-      type: 'Video Consultation',
-      status: 'Upcoming',
-      symptoms: 'Routine cardiovascular checkup & blood pressure review',
-      createdAt: new Date().toISOString()
-    }
-  ]);
+  const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [authLoading, setAuthLoading] = useState<boolean>(true);
+  const [dataLoading, setDataLoading] = useState<boolean>(false);
+  const [isEmailVerified, setIsEmailVerified] = useState<boolean>(false);
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
 
-  const [reminders, setReminders] = useState<MedicineReminder[]>(initialReminders);
+  const [activeTab, setActiveTabState] = useState<ActiveTab>('dashboard');
+  const [profileDoc, setProfileDoc] = useState<UserProfile>(emptyUserProfile);
+  const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
+  const [vitalLogs, setVitalLogs] = useState<VitalLog[]>([]);
+  const [scanHistory, setScanHistory] = useState<MedicineScanResult[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [reminders, setReminders] = useState<MedicineReminder[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [emergencyEvents, setEmergencyEvents] = useState<EmergencyEvent[]>([]);
   const [nearbyPlaces] = useState<NearbyPlace[]>(initialNearbyPlaces);
-
-  const [settings, setSettings] = useState<SystemSettings>({
-    theme: 'dark',
-    language: 'English',
-    pushNotifications: true,
-    smsAlerts: true,
-    emailAlerts: true,
-    biometricsEnabled: true,
-    dataSaver: false,
-    locationAccess: true
-  });
+  const [settings, setSettings] = useState<SystemSettings>(defaultSettings);
 
   const [isSosModalOpen, setIsSosModalOpen] = useState(false);
   const [sosDispatched, setSosDispatched] = useState(false);
   const [isMedicalIdOpen, setIsMedicalIdOpen] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
-  const latestVital = vitalLogs[0] || initialVitalLogs[0];
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => {
+      setToast((prev) => (prev?.message === message ? null : prev));
+    }, 4500);
+  }, []);
 
-  // Calculate dynamic Health Score out of 100 based on vitals
-  const calculateHealthScore = (): number => {
+  const user: UserProfile = {
+    ...profileDoc,
+    emergencyContacts,
+  };
+
+  const latestVital: VitalLog | null = vitalLogs[0] || null;
+
+  const calculateHealthScore = (): number | null => {
+    if (!latestVital) return null;
     let score = 100;
-    // Heart rate penalty
     if (latestVital.heartRate < 60 || latestVital.heartRate > 90) score -= 8;
-    // BP penalty
     if (latestVital.bloodPressureSys > 130 || latestVital.bloodPressureSys < 90) score -= 10;
-    // Sugar penalty
     if (latestVital.bloodSugar > 110) score -= 10;
-    // Sleep penalty
-    if (latestVital.sleepHours < 7) score -= 8;
-    // Water penalty
-    if (latestVital.waterIntakeMl < 2000) score -= 5;
-    return Math.max(score, 65);
+    if (latestVital.sleepHours > 0 && latestVital.sleepHours < 7) score -= 8;
+    if (latestVital.waterIntakeMl > 0 && latestVital.waterIntakeMl < 2000) score -= 5;
+    if (latestVital.spO2 < 95) score -= 12;
+    return Math.max(score, 50);
   };
 
   const healthScore = calculateHealthScore();
 
-  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
-    setToast({ message, type });
-    setTimeout(() => {
-      setToast(null);
-    }, 4000);
-  };
+  const setActiveTab = useCallback(
+    (tab: ActiveTab) => {
+      if (tab === 'admin' && !isAdmin) {
+        showToast('Access denied: Administrator privileges required.', 'error');
+        setActiveTabState('dashboard');
+        return;
+      }
+      setActiveTabState(tab);
+    },
+    [isAdmin, showToast]
+  );
 
-  const login = (email: string) => {
-    setIsAuthenticated(true);
-    setUser(prev => ({ ...prev, email, name: email.split('@')[0].toUpperCase().replace('.', ' ') }));
-    showToast('Logged in successfully to HealthCare+', 'success');
-  };
+  // Clear local sensitive state when signed out
+  const resetUserState = useCallback(() => {
+    setProfileDoc(emptyUserProfile);
+    setEmergencyContacts([]);
+    setVitalLogs([]);
+    setScanHistory([]);
+    setChatMessages([]);
+    setDoctors([]);
+    setAppointments([]);
+    setReminders([]);
+    setNotifications([]);
+    setEmergencyEvents([]);
+    setIsAdmin(false);
+    setActiveTabState('dashboard');
+  }, []);
 
-  const logout = () => {
-    setIsAuthenticated(false);
-    showToast('You have been logged out securely', 'info');
-  };
+  // Listen to Firebase Auth state changes
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (fbUser) => {
+      setFirebaseUser(fbUser);
+      setIsEmailVerified(Boolean(fbUser?.emailVerified));
 
-  const updateProfile = (updated: Partial<UserProfile>) => {
-    setUser(prev => ({ ...prev, ...updated }));
-    showToast('Health Profile updated successfully', 'success');
-  };
+      if (!fbUser) {
+        resetUserState();
+        setAuthLoading(false);
+        return;
+      }
 
-  const addVitalLog = (logData: Omit<VitalLog, 'id' | 'timestamp'>) => {
-    const newLog: VitalLog = {
-      ...logData,
-      id: `v_${Date.now()}`,
-      timestamp: new Date().toISOString()
+      if (!fbUser.emailVerified) {
+        setIsAdmin(false);
+        setAuthLoading(false);
+        return;
+      }
+
+      setAuthLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [resetUserState]);
+
+  // Attach Firestore listeners only when authenticated & email verified
+  useEffect(() => {
+    if (!firebaseUser || !isEmailVerified) {
+      return;
+    }
+
+    let cancelled = false;
+    const unsubs: Array<() => void> = [];
+
+    const handleSubError = (err: Error) => {
+      console.error('Firestore subscription error:', err);
+      let msg = err.message;
+      try {
+        const parsed = JSON.parse(err.message);
+        if (parsed?.error) msg = `${parsed.error} (${parsed.path})`;
+      } catch {
+        // Keep raw message
+      }
+      showToast(`Database error: ${msg}`, 'error');
     };
-    setVitalLogs(prev => [newLog, ...prev]);
-    showToast('Vitals recorded to health vault', 'success');
-  };
 
-  const addScanResult = (result: MedicineScanResult) => {
-    setScanHistory(prev => [result, ...prev]);
-    showToast(`Scanned medicine: ${result.name}`, 'success');
-  };
+    const initializeSubscriptions = async () => {
+      setDataLoading(true);
+      try {
+        const [initialProf, adminFlag] = await Promise.all([
+          ensureUserProfile(firebaseUser),
+          checkIsUserAdmin(firebaseUser),
+        ]);
 
-  const removeScan = (id: string) => {
-    setScanHistory(prev => prev.filter(item => item.id !== id));
-    showToast('Scan history entry deleted', 'info');
-  };
+        if (cancelled) return;
 
-  const addChatMessage = (msg: Omit<ChatMessage, 'id' | 'timestamp'>) => {
-    const newMsg: ChatMessage = {
-      ...msg,
-      id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      timestamp: new Date().toISOString()
+        setProfileDoc(initialProf);
+        if (initialProf.settings) {
+          setSettings(initialProf.settings);
+        }
+        const effectiveAdmin = adminFlag || initialProf.role === 'admin';
+        setIsAdmin(effectiveAdmin);
+
+        unsubs.push(
+          subscribeUserProfile(
+            firebaseUser.uid,
+            (partial) => {
+              setProfileDoc((prev) => ({ ...prev, ...partial }));
+              if (partial.settings) {
+                setSettings(partial.settings);
+              }
+            },
+            handleSubError
+          )
+        );
+
+        unsubs.push(subscribeHealthRecords(firebaseUser.uid, setVitalLogs, handleSubError));
+        unsubs.push(subscribeDoctors(setDoctors, handleSubError));
+        unsubs.push(subscribeAppointments(firebaseUser.uid, setAppointments, handleSubError));
+        unsubs.push(subscribeMedicineReminders(firebaseUser.uid, setReminders, handleSubError));
+        unsubs.push(subscribeScanHistory(firebaseUser.uid, setScanHistory, handleSubError));
+        unsubs.push(subscribeChatHistory(firebaseUser.uid, setChatMessages, handleSubError));
+        unsubs.push(subscribeEmergencyContacts(firebaseUser.uid, setEmergencyContacts, handleSubError));
+        unsubs.push(subscribeNotifications(firebaseUser.uid, setNotifications, handleSubError));
+        unsubs.push(subscribeEmergencyEvents(firebaseUser.uid, effectiveAdmin, setEmergencyEvents, handleSubError));
+      } catch (err: any) {
+        if (!cancelled) {
+          showToast(err?.message || 'Failed to connect to Cloud Firestore.', 'error');
+        }
+      } finally {
+        if (!cancelled) {
+          setDataLoading(false);
+        }
+      }
     };
-    setChatMessages(prev => [...prev, newMsg]);
+
+    initializeSubscriptions();
+
+    return () => {
+      cancelled = true;
+      unsubs.forEach((u) => u());
+    };
+  }, [firebaseUser, isEmailVerified, showToast]);
+
+  // Redirect away from admin if role revoked
+  useEffect(() => {
+    if (activeTab === 'admin' && !isAdmin) {
+      setActiveTabState('dashboard');
+    }
+  }, [activeTab, isAdmin]);
+
+  // Sync theme with root HTML tag class
+  useEffect(() => {
+    if (settings.theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [settings.theme]);
+
+  const getAuthToken = useCallback(async (): Promise<string | null> => {
+    if (!auth.currentUser) return null;
+    return auth.currentUser.getIdToken();
+  }, []);
+
+  // =========================================================================
+  // AUTHENTICATION ACTIONS
+  // =========================================================================
+  const registerWithEmail = async (fullName: string, email: string, password: string) => {
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email.trim(), password);
+      await updateFirebaseAuthProfile(cred.user, {
+        displayName: fullName.trim().slice(0, 120),
+      });
+      await sendEmailVerification(cred.user);
+      setFirebaseUser(cred.user);
+      setIsEmailVerified(cred.user.emailVerified);
+      showToast('Account created! A verification email has been sent to your inbox.', 'success');
+    } catch (error) {
+      const msg = getAuthErrorMessage(error);
+      showToast(msg, 'error');
+      throw new Error(msg);
+    }
   };
 
-  const clearChat = () => {
-    setChatMessages([sampleChatMessages[0]]);
-    showToast('Chat history cleared', 'info');
+  const loginWithEmail = async (email: string, password: string) => {
+    try {
+      const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+      setFirebaseUser(cred.user);
+      setIsEmailVerified(cred.user.emailVerified);
+      if (!cred.user.emailVerified) {
+        showToast('Please verify your email address to unlock your health vault.', 'info');
+      } else {
+        showToast('Signed in securely to HealthCare+', 'success');
+      }
+    } catch (error) {
+      const msg = getAuthErrorMessage(error);
+      showToast(msg, 'error');
+      throw new Error(msg);
+    }
   };
 
-  const bookAppointment = (
+  const loginWithGoogle = async () => {
+    try {
+      const cred = await signInWithPopup(auth, googleProvider);
+      setFirebaseUser(cred.user);
+      setIsEmailVerified(cred.user.emailVerified);
+      showToast('Signed in with Google successfully', 'success');
+    } catch (error) {
+      const msg = getAuthErrorMessage(error);
+      showToast(msg, 'error');
+      throw new Error(msg);
+    }
+  };
+
+  const resendVerificationEmail = async () => {
+    if (!auth.currentUser) return;
+    try {
+      await sendEmailVerification(auth.currentUser);
+      showToast('Verification email resent. Please check your inbox and spam folder.', 'success');
+    } catch (error) {
+      const msg = getAuthErrorMessage(error);
+      showToast(msg, 'error');
+      throw new Error(msg);
+    }
+  };
+
+  const refreshVerificationStatus = async (): Promise<boolean> => {
+    if (!auth.currentUser) return false;
+    try {
+      await auth.currentUser.reload();
+      await auth.currentUser.getIdToken(true);
+      const verified = Boolean(auth.currentUser.emailVerified);
+      setFirebaseUser(auth.currentUser);
+      setIsEmailVerified(verified);
+      if (verified) {
+        showToast('Email verified! Loading your encrypted health vault...', 'success');
+      } else {
+        showToast('Email is not verified yet. Please click the link in your email.', 'info');
+      }
+      return verified;
+    } catch (error) {
+      const msg = getAuthErrorMessage(error);
+      showToast(msg, 'error');
+      return false;
+    }
+  };
+
+  const sendPasswordReset = async (email: string) => {
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      showToast(`Password reset instructions sent to ${email.trim()}`, 'success');
+    } catch (error) {
+      const msg = getAuthErrorMessage(error);
+      showToast(msg, 'error');
+      throw new Error(msg);
+    }
+  };
+
+  const logout = async () => {
+    try {
+      await signOut(auth);
+      resetUserState();
+      showToast('You have been signed out securely', 'info');
+    } catch (error) {
+      showToast(getAuthErrorMessage(error), 'error');
+    }
+  };
+
+  // =========================================================================
+  // FIRESTORE MUTATIONS
+  // =========================================================================
+  const updateProfile = async (updated: Partial<UserProfile>) => {
+    if (!firebaseUser) return;
+    try {
+      await updateUserProfileDoc(firebaseUser.uid, updated);
+      showToast('Health Profile updated in Cloud Firestore', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to update profile', 'error');
+      throw err;
+    }
+  };
+
+  const addEmergencyContact = async (
+    contact: Omit<EmergencyContact, 'id' | 'userId' | 'createdAt' | 'updatedAt'>
+  ) => {
+    if (!firebaseUser) return;
+    try {
+      await createEmergencyContactDoc(firebaseUser.uid, contact);
+      showToast(`Emergency contact ${contact.name} saved`, 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to add emergency contact', 'error');
+    }
+  };
+
+  const removeEmergencyContact = async (id: string) => {
+    try {
+      await deleteEmergencyContactDoc(id);
+      showToast('Emergency contact removed', 'info');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to delete emergency contact', 'error');
+    }
+  };
+
+  const addVitalLog = async (
+    logData: Omit<VitalLog, 'id' | 'timestamp' | 'userId' | 'createdAt' | 'updatedAt'>
+  ) => {
+    if (!firebaseUser) return;
+    try {
+      await createHealthRecord(firebaseUser.uid, logData);
+      showToast('Vitals recorded to Cloud Firestore vault', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to save vital log', 'error');
+    }
+  };
+
+  const addScanResult = async (
+    result: Omit<MedicineScanResult, 'id' | 'userId' | 'createdAt' | 'updatedAt'>
+  ) => {
+    if (!firebaseUser) return;
+    try {
+      await createScanHistoryDoc(firebaseUser.uid, result);
+      showToast(`Saved scan: ${result.name}`, 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to save medicine scan', 'error');
+    }
+  };
+
+  const removeScan = async (id: string) => {
+    try {
+      await deleteScanHistoryDoc(id);
+      showToast('Scan history entry deleted', 'info');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to delete scan', 'error');
+    }
+  };
+
+  const addChatMessage = async (
+    msg: Omit<ChatMessage, 'id' | 'timestamp' | 'userId' | 'createdAt' | 'updatedAt'>
+  ) => {
+    if (!firebaseUser) return;
+    try {
+      await createChatMessageDoc(firebaseUser.uid, msg);
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to save chat message', 'error');
+    }
+  };
+
+  const clearChat = async () => {
+    if (!firebaseUser) return;
+    try {
+      await clearChatHistoryDocs(firebaseUser.uid);
+      showToast('Chat history cleared', 'info');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to clear chat history', 'error');
+    }
+  };
+
+  const bookAppointment = async (
     doctorId: string,
     date: string,
     timeSlot: string,
     type: 'In-Person' | 'Video Consultation',
     symptoms?: string
   ) => {
-    const doctor = doctors.find(d => d.id === doctorId);
-    if (!doctor) return;
-
-    const newApp: Appointment = {
-      id: `app_${Date.now()}`,
-      doctorId,
-      doctorName: doctor.name,
-      doctorSpecialty: doctor.specialty,
-      doctorPhoto: doctor.photo,
-      date,
-      timeSlot,
-      type,
-      status: 'Upcoming',
-      symptoms,
-      createdAt: new Date().toISOString()
-    };
-
-    setAppointments(prev => [newApp, ...prev]);
-    showToast(`Appointment confirmed with ${doctor.name}`, 'success');
+    if (!firebaseUser) return;
+    const doctor = doctors.find((d) => d.id === doctorId);
+    if (!doctor) {
+      showToast('Selected specialist was not found in directory', 'error');
+      return;
+    }
+    try {
+      const appointmentId = await createAppointmentDoc(
+        firebaseUser.uid,
+        doctor,
+        date,
+        timeSlot,
+        type,
+        symptoms
+      );
+      await createNotificationDoc(firebaseUser.uid, {
+        title: 'Doctor Appointment Confirmed',
+        message: `${doctor.name} (${type}) scheduled for ${date} at ${timeSlot}.`,
+        type: 'appointment',
+        appointmentId,
+      });
+      showToast(`Appointment confirmed with ${doctor.name}`, 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to book appointment', 'error');
+    }
   };
 
-  const cancelAppointment = (id: string) => {
-    setAppointments(prev =>
-      prev.map(a => (a.id === id ? { ...a, status: 'Cancelled' } : a))
-    );
-    showToast('Appointment cancelled', 'info');
+  const cancelAppointment = async (id: string) => {
+    try {
+      await updateAppointmentStatusDoc(id, 'Cancelled');
+      showToast('Appointment cancelled', 'info');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to cancel appointment', 'error');
+    }
   };
 
-  const toggleReminderTaken = (id: string) => {
-    setReminders(prev =>
-      prev.map(r => (r.id === id ? { ...r, takenToday: !r.takenToday } : r))
-    );
-    showToast('Medicine status updated', 'success');
+  const seedDoctorDirectory = async () => {
+    if (!isAdmin) {
+      showToast('Only verified administrators can seed the doctor directory.', 'error');
+      return;
+    }
+    try {
+      for (const docItem of initialDoctors) {
+        const { id, ...rest } = docItem;
+        await createDoctorDoc({ ...rest, verified: true }, id);
+      }
+      showToast('Verified clinical specialist directory populated in Firestore', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to populate specialist directory', 'error');
+    }
   };
 
-  const addReminder = (reminderData: Omit<MedicineReminder, 'id' | 'takenToday'>) => {
-    const newRem: MedicineReminder = {
-      ...reminderData,
-      id: `rem_${Date.now()}`,
-      takenToday: false
-    };
-    setReminders(prev => [...prev, newRem]);
-    showToast(`Reminder added for ${reminderData.name}`, 'success');
+  const verifyDoctor = async (doctorId: string) => {
+    if (!isAdmin) {
+      showToast('Only verified administrators can verify licenses.', 'error');
+      return;
+    }
+    try {
+      await verifyDoctorDoc(doctorId);
+      showToast('Doctor credentials verified in Firestore', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to verify doctor', 'error');
+    }
   };
 
-  const updateSettings = (newSettings: Partial<SystemSettings>) => {
-    setSettings(prev => ({ ...prev, ...newSettings }));
-    showToast('Settings updated', 'success');
+  const toggleReminderTaken = async (id: string) => {
+    const target = reminders.find((r) => r.id === id);
+    if (!target) return;
+    try {
+      await toggleReminderTakenDoc(id, target.takenToday, target.pillsLeft);
+      showToast('Medication adherence updated', 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to update medication status', 'error');
+    }
+  };
+
+  const addReminder = async (
+    reminderData: Omit<MedicineReminder, 'id' | 'takenToday' | 'userId' | 'createdAt' | 'updatedAt'>
+  ) => {
+    if (!firebaseUser) return;
+    try {
+      await createMedicineReminderDoc(firebaseUser.uid, reminderData);
+      await createNotificationDoc(firebaseUser.uid, {
+        title: 'Medicine Reminder Scheduled',
+        message: `${reminderData.name} (${reminderData.dosage}) scheduled at ${reminderData.timeSlots.join(', ')}.`,
+        type: 'reminder',
+      });
+      showToast(`Reminder added for ${reminderData.name}`, 'success');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to save reminder', 'error');
+    }
+  };
+
+  const removeReminder = async (id: string) => {
+    try {
+      await deleteMedicineReminderDoc(id);
+      showToast('Medicine reminder deleted', 'info');
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to delete reminder', 'error');
+    }
+  };
+
+  const markNotificationRead = async (id: string) => {
+    try {
+      await markNotificationReadDoc(id);
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to update notification', 'error');
+    }
+  };
+
+  const updateSettings = async (newSettings: Partial<SystemSettings>) => {
+    const merged = { ...settings, ...newSettings };
+    setSettings(merged);
+    if (firebaseUser && isEmailVerified) {
+      try {
+        await updateUserProfileDoc(firebaseUser.uid, { settings: merged });
+        showToast('Settings saved to your profile', 'success');
+      } catch (err: any) {
+        showToast(err?.message || 'Failed to persist settings', 'error');
+      }
+    }
   };
 
   const openSosModal = () => {
@@ -283,44 +719,78 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSosDispatched(false);
   };
 
-  const triggerSosDispatch = async () => {
+  const triggerSosDispatch = async (note?: string) => {
+    if (!firebaseUser) return null;
     try {
-      setSosDispatched(true);
+      const token = await getAuthToken();
       const res = await fetch('/api/emergency/sos', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           userLocation: 'Current GPS Pin',
-          emergencyContacts: user.emergencyContacts
-        })
+          emergencyContacts,
+          note: note || '',
+        }),
       });
       const data = await res.json();
-      showToast('CRITICAL: Emergency SOS dispatched to ambulance & contacts', 'error');
+      if (!res.ok) {
+        throw new Error(data.error || 'SOS dispatch failed');
+      }
+
+      setSosDispatched(true);
+
+      await createEmergencyEventDoc(firebaseUser.uid, {
+        patientName: user.name || firebaseUser.email || 'Patient',
+        sosId: data.sosId,
+        userLocation: data.userLocation || 'Current GPS Pin',
+        status: 'DISPATCHED',
+        ambulanceEtaMinutes: data.ambulanceEtaMinutes ?? 6,
+        dispatchedUnit: data.dispatchedUnit || 'Metro Ambulance #408',
+        notifiedContactsCount: data.notifiedContactsCount ?? emergencyContacts.length,
+        note: note || '',
+      });
+
+      await createNotificationDoc(firebaseUser.uid, {
+        title: 'Emergency SOS Dispatched',
+        message: `${data.dispatchedUnit} dispatched. ETA ~${data.ambulanceEtaMinutes} mins.`,
+        type: 'sos',
+      });
+
+      showToast('CRITICAL: Emergency SOS dispatched & logged', 'error');
       return data;
-    } catch (e) {
-      showToast('SOS dispatched locally to nearest emergency services', 'error');
+    } catch (e: any) {
+      showToast(e?.message || 'Failed to dispatch SOS alert', 'error');
+      throw e;
     }
   };
-
-  // Sync theme with root HTML tag class
-  useEffect(() => {
-    if (settings.theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [settings.theme]);
 
   return (
     <AppContext.Provider
       value={{
-        isAuthenticated,
+        firebaseUser,
+        authLoading,
+        dataLoading,
+        isAuthenticated: Boolean(firebaseUser),
+        isEmailVerified,
+        isAdmin,
         activeTab,
         setActiveTab,
         user,
-        login,
+        getAuthToken,
+
+        registerWithEmail,
+        loginWithEmail,
+        loginWithGoogle,
+        resendVerificationEmail,
+        refreshVerificationStatus,
+        sendPasswordReset,
         logout,
         updateProfile,
+        addEmergencyContact,
+        removeEmergencyContact,
 
         vitalLogs,
         latestVital,
@@ -339,11 +809,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         appointments,
         bookAppointment,
         cancelAppointment,
+        seedDoctorDirectory,
+        verifyDoctor,
 
         reminders,
         toggleReminderTaken,
         addReminder,
+        removeReminder,
 
+        notifications,
+        markNotificationRead,
+
+        emergencyEvents,
         nearbyPlaces,
 
         settings,
@@ -359,7 +836,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsMedicalIdOpen,
 
         toast,
-        showToast
+        showToast,
       }}
     >
       {children}

@@ -1,13 +1,162 @@
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import path from 'path';
+import fs from 'fs';
 import dotenv from 'dotenv';
-import { GoogleGenAI, Type } from '@google/genai';
+import { initializeApp, getApps, getApp, cert } from 'firebase-admin/app';
+import { getAuth, DecodedIdToken } from 'firebase-admin/auth';
+import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
+import { GoogleGenAI } from '@google/genai';
 import { fileURLToPath } from 'url';
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Load project config from firebase-applet-config.json if present
+let appletConfig: { projectId?: string; firestoreDatabaseId?: string } = {};
+try {
+  const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+  if (fs.existsSync(configPath)) {
+    appletConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  }
+} catch (err) {
+  console.warn('Could not read firebase-applet-config.json:', err);
+}
+
+const FIREBASE_PROJECT_ID =
+  process.env.FIREBASE_PROJECT_ID || appletConfig.projectId || '';
+const FIRESTORE_DATABASE_ID =
+  process.env.FIREBASE_FIRESTORE_DATABASE_ID || appletConfig.firestoreDatabaseId || '';
+
+let hasServiceAccount = false;
+
+function initFirebaseAdmin() {
+  if (getApps().length > 0) return;
+
+  try {
+    if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+      const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+      initializeApp({
+        credential: cert(serviceAccount),
+        projectId: serviceAccount.project_id || FIREBASE_PROJECT_ID,
+      });
+      hasServiceAccount = true;
+    } else if (process.env.FIREBASE_CLIENT_EMAIL && process.env.FIREBASE_PRIVATE_KEY && FIREBASE_PROJECT_ID) {
+      initializeApp({
+        credential: cert({
+          projectId: FIREBASE_PROJECT_ID,
+          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+          privateKey: process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+        }),
+        projectId: FIREBASE_PROJECT_ID,
+      });
+      hasServiceAccount = true;
+    } else if (FIREBASE_PROJECT_ID) {
+      // Allows Firebase ID token verification via Google public JWKS keys without private service account JSON
+      initializeApp({
+        projectId: FIREBASE_PROJECT_ID,
+      });
+    } else {
+      console.warn('Firebase Admin SDK: No project ID configured.');
+    }
+  } catch (err) {
+    console.error('Failed to initialize Firebase Admin SDK:', err);
+  }
+}
+
+initFirebaseAdmin();
+
+function getAdminDb() {
+  if (!hasServiceAccount || getApps().length === 0) return null;
+  const appInstance = getApp();
+  return FIRESTORE_DATABASE_ID
+    ? getAdminFirestore(appInstance, FIRESTORE_DATABASE_ID)
+    : getAdminFirestore(appInstance);
+}
+
+export interface AuthenticatedRequest extends Request {
+  authUser?: {
+    uid: string;
+    email: string;
+    emailVerified: boolean;
+    isAdmin: boolean;
+  };
+}
+
+async function resolveIsAdmin(decoded: DecodedIdToken): Promise<boolean> {
+  if (decoded.admin === true) return true;
+  if (decoded.email === 'patekarshubham07@gmail.com' && decoded.email_verified === true) {
+    return true;
+  }
+  const adminDb = getAdminDb();
+  if (adminDb && decoded.email_verified) {
+    try {
+      const snap = await adminDb.doc(`admins/${decoded.uid}`).get();
+      if (snap.exists) return true;
+    } catch {
+      // Ignore if Firestore admin lookup unavailable
+    }
+  }
+  return false;
+}
+
+async function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  if (getApps().length === 0) {
+    return res.status(503).json({
+      error: 'Authentication service is not configured on the server.',
+    });
+  }
+
+  const authHeader = req.headers.authorization || '';
+  if (!authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({
+      error: 'Unauthorized: Missing Bearer authentication token.',
+    });
+  }
+
+  const idToken = authHeader.slice(7).trim();
+  if (!idToken) {
+    return res.status(401).json({
+      error: 'Unauthorized: Empty authentication token.',
+    });
+  }
+
+  try {
+    const decoded = await getAuth(getApp()).verifyIdToken(idToken);
+    const isAdmin = await resolveIsAdmin(decoded);
+    req.authUser = {
+      uid: decoded.uid,
+      email: decoded.email || '',
+      emailVerified: Boolean(decoded.email_verified),
+      isAdmin,
+    };
+    return next();
+  } catch (err: any) {
+    console.error('Firebase token verification failed:', err?.code || err?.message);
+    return res.status(401).json({
+      error: 'Unauthorized: Invalid or expired Firebase ID token.',
+    });
+  }
+}
+
+function requireVerifiedEmail(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  if (!req.authUser?.emailVerified) {
+    return res.status(403).json({
+      error: 'Email verification required before accessing clinical endpoints.',
+    });
+  }
+  return next();
+}
+
+function requireAdmin(req: AuthenticatedRequest, res: Response, next: NextFunction) {
+  if (!req.authUser?.isAdmin) {
+    return res.status(403).json({
+      error: 'Forbidden: Verified administrator privileges required.',
+    });
+  }
+  return next();
+}
 
 const app = express();
 const PORT = 3000;
@@ -48,86 +197,69 @@ app.get('/api/health', (req: Request, res: Response) => {
     status: 'ok',
     app: 'HealthCare+',
     timestamp: new Date().toISOString(),
-    geminiConfigured: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY')
+    firebaseProjectId: FIREBASE_PROJECT_ID || null,
+    firebaseAdminInitialized: getApps().length > 0,
+    firebaseServiceAccountConfigured: hasServiceAccount,
+    geminiConfigured: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY'),
   });
 });
 
-// Authentication Routes
-app.post('/api/auth/login', (req: Request, res: Response) => {
-  const { email, password, rememberMe } = req.body;
-  if (!email) {
-    return res.status(400).json({ error: 'Email is required' });
-  }
+// Verified Identity Check
+app.get('/api/auth/me', requireAuth, (req: AuthenticatedRequest, res: Response) => {
   return res.json({
     success: true,
-    token: `jwt_hcplus_${Date.now()}_token`,
-    user: {
-      id: 'usr_1001',
-      name: email.split('@')[0].toUpperCase().replace('.', ' '),
-      email,
-      role: email.includes('admin') ? 'admin' : 'patient'
+    user: req.authUser,
+  });
+});
+
+// Admin Platform Overview (Verified Admins Only)
+app.get('/api/admin/overview', requireAuth, requireVerifiedEmail, requireAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const adminDb = getAdminDb();
+    if (!adminDb) {
+      return res.json({
+        success: true,
+        serviceAccountAvailable: false,
+        stats: null,
+      });
     }
-  });
+
+    const [profilesSnap, doctorsSnap, appointmentsSnap, eventsSnap] = await Promise.all([
+      adminDb.collection('profiles').count().get(),
+      adminDb.collection('doctors').count().get(),
+      adminDb.collection('appointments').count().get(),
+      adminDb.collection('emergency_events').count().get(),
+    ]);
+
+    return res.json({
+      success: true,
+      serviceAccountAvailable: true,
+      stats: {
+        totalPatients: profilesSnap.data().count,
+        totalDoctors: doctorsSnap.data().count,
+        totalAppointments: appointmentsSnap.data().count,
+        totalEmergencyEvents: eventsSnap.data().count,
+      },
+    });
+  } catch (err: any) {
+    console.error('Admin overview error:', err);
+    return res.status(500).json({ error: 'Failed to load admin overview.' });
+  }
 });
 
-app.post('/api/auth/biometric', (req: Request, res: Response) => {
-  return res.json({
-    success: true,
-    message: 'Biometric fingerprint / face ID authentication verified',
-    token: `jwt_hcplus_bio_${Date.now()}`
-  });
-});
-
-// Gemini AI Medicine Scanner Route
-app.post('/api/medicine/scan', async (req: Request, res: Response) => {
+// Gemini AI Medicine Scanner Route (Protected)
+app.post('/api/medicine/scan', requireAuth, requireVerifiedEmail, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { imageBase64, mimeType = 'image/jpeg', manualSearchQuery } = req.body;
 
-    const ai = getGeminiClient();
+    if (!imageBase64 && (!manualSearchQuery || typeof manualSearchQuery !== 'string' || !manualSearchQuery.trim())) {
+      return res.status(400).json({ error: 'Provide either a medicine image or a search query.' });
+    }
 
+    const ai = getGeminiClient();
     if (!ai) {
-      // Fallback realistic scan output if API key is not configured in secrets
-      return res.json({
-        success: true,
-        isFallback: true,
-        data: {
-          id: `scan_${Date.now()}`,
-          timestamp: new Date().toISOString(),
-          name: manualSearchQuery || 'Augmentin 625 Duo',
-          composition: 'Amoxicillin Trihydrate (500mg) + Potassium Clavulanate (125mg)',
-          uses: [
-            'Bacterial Respiratory Infections',
-            'Acute Sinusitis & Otitis Media',
-            'Skin & Soft Tissue Infections',
-            'Urinary Tract Infections'
-          ],
-          benefits: [
-            'Dual action against beta-lactamase producing resistant bacteria',
-            'Broad spectrum fast relief for acute infections',
-            'Prevents strain mutation and recurrence'
-          ],
-          sideEffects: [
-            'Mild Nausea or Stomach Upset',
-            'Diarrhea',
-            'Skin Allergy or Rash',
-            'Headache'
-          ],
-          dosage: '1 Tablet twice daily after meals for 5 to 7 days as prescribed.',
-          warnings: [
-            'Do not skip doses or terminate early',
-            'Avoid if allergic to Penicillin antibiotics',
-            'Consult doctor during pregnancy or nursing'
-          ],
-          storage: 'Store below 25°C in a cool dry place away from moisture.',
-          alternativeMedicines: [
-            { name: 'Moxikind-CV 625', approxPrice: '$12.50 / strip', manufacturer: 'Mankind Pharma' },
-            { name: 'Clavam 625', approxPrice: '$14.00 / strip', manufacturer: 'Alkem Labs' },
-            { name: 'Advent 625', approxPrice: '$11.80 / strip', manufacturer: 'Cipla Therapeutics' }
-          ],
-          priceRange: '$12.00 - $16.00 per pack',
-          disclaimer: 'Medical Disclaimer: AI-extracted reference only. Always confirm prescription with a licensed physician.',
-          saved: true
-        }
+      return res.status(503).json({
+        error: 'Gemini AI service is not configured. Set GEMINI_API_KEY in server secrets.',
       });
     }
 
@@ -152,32 +284,35 @@ Respond strictly in JSON format according to this schema:
 
     let contentsPayload: any;
 
-    if (imageBase64) {
-      // Clean base64 string
+    if (imageBase64 && typeof imageBase64 === 'string') {
       const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
       contentsPayload = {
         parts: [
           { inlineData: { mimeType, data: cleanBase64 } },
-          { text: systemPrompt }
-        ]
+          { text: systemPrompt },
+        ],
       };
     } else {
       contentsPayload = {
         parts: [
-          { text: `${systemPrompt}\nMedicine query: ${manualSearchQuery || 'Paracetamol 500mg'}` }
-        ]
+          { text: `${systemPrompt}\nMedicine query: ${String(manualSearchQuery).trim().slice(0, 200)}` },
+        ],
       };
     }
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-4-hydrogen',
       contents: contentsPayload,
       config: {
         responseMimeType: 'application/json',
-      }
+      },
     });
 
-    const textOutput = response.text || '';
+    const textOutput = (response.text || '').trim();
+    if (!textOutput) {
+      return res.status(502).json({ error: 'Empty response from AI vision service.' });
+    }
+
     const parsedData = JSON.parse(textOutput);
 
     return res.json({
@@ -185,109 +320,96 @@ Respond strictly in JSON format according to this schema:
       data: {
         id: `scan_${Date.now()}`,
         timestamp: new Date().toISOString(),
-        imageUrl: imageBase64 ? imageBase64.substring(0, 100) + '...' : undefined,
         name: parsedData.name || 'Identified Medicine',
         composition: parsedData.composition || 'Active Ingredients',
-        uses: parsedData.uses || [],
-        benefits: parsedData.benefits || [],
-        sideEffects: parsedData.sideEffects || [],
+        uses: Array.isArray(parsedData.uses) ? parsedData.uses : [],
+        benefits: Array.isArray(parsedData.benefits) ? parsedData.benefits : [],
+        sideEffects: Array.isArray(parsedData.sideEffects) ? parsedData.sideEffects : [],
         dosage: parsedData.dosage || 'Take as advised by doctor',
-        warnings: parsedData.warnings || [],
+        warnings: Array.isArray(parsedData.warnings) ? parsedData.warnings : [],
         storage: parsedData.storage || 'Store in cool dry place',
-        alternativeMedicines: parsedData.alternativeMedicines || [],
+        alternativeMedicines: Array.isArray(parsedData.alternativeMedicines) ? parsedData.alternativeMedicines : [],
         priceRange: parsedData.priceRange || 'N/A',
         disclaimer: parsedData.disclaimer || 'Medical Disclaimer: AI generated guidance.',
-        saved: true
-      }
+        saved: true,
+      },
     });
-
   } catch (err: any) {
     console.error('Medicine scan error:', err);
     return res.status(500).json({
-      error: 'Failed to process medicine image',
-      message: err.message
+      error: 'Failed to process medicine scan',
+      message: err.message,
     });
   }
 });
 
-// Gemini AI Health Chatbot Endpoint
-app.post('/api/ai/chat', async (req: Request, res: Response) => {
+// Gemini AI Health Chatbot Endpoint (Protected)
+app.post('/api/ai/chat', requireAuth, requireVerifiedEmail, async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { message, history = [], userProfile } = req.body;
 
-    if (!message) {
+    if (!message || typeof message !== 'string' || !message.trim()) {
       return res.status(400).json({ error: 'Message is required' });
     }
 
     const ai = getGeminiClient();
-
     if (!ai) {
-      // Smart fallback response if API key isn't provided
-      const msgLower = message.toLowerCase();
-      let replyText = "I am HealthCare+ Gemini AI Medical Assistant. I can help explain symptoms, lab reports, diet plans, and medicine interactions.";
-
-      if (msgLower.includes('headache') || msgLower.includes('fever') || msgLower.includes('symptom')) {
-        replyText = "For mild headache or low-grade fever, maintain hydration, rest in a dim room, and track your body temperature. If accompanied by high fever (>102°F), neck stiffness, or vision changes, please consult urgent care immediately.";
-      } else if (msgLower.includes('diet') || msgLower.includes('food') || msgLower.includes('nutrition')) {
-        replyText = "A heart-healthy diet includes high-fiber vegetables, lean proteins (fish, legumes), complex grains, and healthy fats like olive oil or avocados. Limit refined sugars and sodium under 2,000mg/day.";
-      } else if (msgLower.includes('bp') || msgLower.includes('blood pressure')) {
-        replyText = "Normal blood pressure is typically below 120/80 mmHg. Consistent readings above 130/80 mmHg indicate elevated levels. Regular aerobic exercise, stress reduction, and low sodium intake support optimal arterial pressure.";
-      }
-
-      return res.json({
-        success: true,
-        isFallback: true,
-        reply: replyText
+      return res.status(503).json({
+        error: 'Gemini AI assistant is not configured. Set GEMINI_API_KEY in server secrets.',
       });
     }
 
     const systemInstruction = `You are HealthCare+ AI, an empathetic, highly knowledgeable senior clinical assistant.
-User Context: Age ${userProfile?.age || 32}, Gender ${userProfile?.gender || 'Male'}, Allergies: ${userProfile?.allergies?.join(', ') || 'None'}, Medical Conditions: ${userProfile?.medicalConditions?.join(', ') || 'None'}.
+User Context: Age ${userProfile?.age || 'Unknown'}, Gender ${userProfile?.gender || 'Unspecified'}, Allergies: ${Array.isArray(userProfile?.allergies) && userProfile.allergies.length > 0 ? userProfile.allergies.join(', ') : 'None recorded'}, Medical Conditions: ${Array.isArray(userProfile?.medicalConditions) && userProfile.medicalConditions.length > 0 ? userProfile.medicalConditions.join(', ') : 'None recorded'}.
 Provide clear, actionable, evidence-based medical, nutrition, exercise, or health guidance. Keep answers formatted neatly with concise bullet points where appropriate. Always include a brief safety reminder when discussing severe symptoms.`;
 
-    const formattedContents = history.map((item: any) => ({
-      role: item.sender === 'user' ? 'user' : 'model',
-      parts: [{ text: item.text }]
-    }));
+    const formattedContents = Array.isArray(history)
+      ? history.slice(-20).map((item: any) => ({
+          role: item.sender === 'user' ? 'user' : 'model',
+          parts: [{ text: String(item.text || '').slice(0, 4000) }],
+        }))
+      : [];
 
     formattedContents.push({
       role: 'user',
-      parts: [{ text: message }]
+      parts: [{ text: message.trim().slice(0, 4000) }],
     });
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-4-hydrogen',
       contents: formattedContents,
       config: {
         systemInstruction,
-        temperature: 0.7
-      }
+      },
     });
 
     return res.json({
       success: true,
-      reply: response.text || 'I am unable to generate a response at this moment.'
+      reply: response.text || 'I am unable to generate a response at this moment.',
     });
-
   } catch (err: any) {
     console.error('AI chat error:', err);
     return res.status(500).json({ error: 'AI Assistant failed to respond', details: err.message });
   }
 });
 
-// Emergency SOS Dispatch Endpoint
-app.post('/api/emergency/sos', (req: Request, res: Response) => {
+// Emergency SOS Dispatch Endpoint (Protected)
+app.post('/api/emergency/sos', requireAuth, requireVerifiedEmail, (req: AuthenticatedRequest, res: Response) => {
   const { userLocation, emergencyContacts, note } = req.body;
-  
+  const contactsCount = Array.isArray(emergencyContacts) ? emergencyContacts.length : 0;
+
   return res.json({
     success: true,
     sosId: `sos_${Date.now()}`,
+    userId: req.authUser!.uid,
+    userLocation: typeof userLocation === 'string' && userLocation.trim() ? userLocation.trim().slice(0, 240) : 'Current GPS Pin',
     timestamp: new Date().toISOString(),
     status: 'DISPATCHED',
     ambulanceEtaMinutes: 6,
     dispatchedUnit: 'Metro Ambulance #408',
-    notifiedContactsCount: emergencyContacts?.length || 2,
-    message: 'Emergency SOS alert dispatched to nearest hospital & primary emergency contacts with live GPS coordinates.'
+    notifiedContactsCount: contactsCount,
+    note: typeof note === 'string' ? note.slice(0, 500) : '',
+    message: 'Emergency SOS alert dispatched to nearest hospital & primary emergency contacts with live GPS coordinates.',
   });
 });
 

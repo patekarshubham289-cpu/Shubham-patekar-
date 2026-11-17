@@ -4,9 +4,6 @@ import {
   Heart,
   Activity,
   Droplets,
-  Flame,
-  Moon,
-  Smile,
   ScanLine,
   Bot,
   CalendarCheck,
@@ -17,7 +14,8 @@ import {
   ChevronRight,
   TrendingUp,
   CheckCircle2,
-  Clock
+  Clock,
+  Plus
 } from 'lucide-react';
 
 export const DashboardView: React.FC = () => {
@@ -34,15 +32,38 @@ export const DashboardView: React.FC = () => {
   } = useApp();
 
   const handleQuickWaterAdd = () => {
+    const base = latestVital || {
+      heartRate: 72,
+      bloodPressureSys: 120,
+      bloodPressureDia: 80,
+      bloodSugar: 95,
+      bmi: user.bmi || 22.5,
+      weightKg: user.weightKg || 70,
+      temperatureC: 36.6,
+      spO2: 98,
+      waterIntakeMl: 0,
+      sleepHours: 7.5,
+      mood: 'Good' as const,
+    };
     addVitalLog({
-      ...latestVital,
-      waterIntakeMl: latestVital.waterIntakeMl + 250
+      heartRate: base.heartRate,
+      bloodPressureSys: base.bloodPressureSys,
+      bloodPressureDia: base.bloodPressureDia,
+      bloodSugar: base.bloodSugar,
+      bmi: base.bmi,
+      weightKg: base.weightKg,
+      temperatureC: base.temperatureC,
+      spO2: base.spO2,
+      waterIntakeMl: (base.waterIntakeMl || 0) + 250,
+      sleepHours: base.sleepHours,
+      mood: base.mood,
     });
   };
 
+  const displayScore = healthScore ?? 0;
+
   return (
     <div className="space-y-6 pb-24 text-white">
-      
       {/* Welcome Banner & Health Score */}
       <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#181818] via-[#1f2923] to-[#121f18] border border-emerald-500/20 p-6 sm:p-8 shadow-2xl">
         <div className="absolute -top-12 -right-12 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
@@ -53,10 +74,15 @@ export const DashboardView: React.FC = () => {
               <Sparkles className="w-3.5 h-3.5 text-amber-400" /> AI Vitality Monitoring Active
             </div>
             <h1 className="text-2xl sm:text-3xl font-black text-white tracking-tight">
-              Welcome back, <span className="bg-gradient-to-r from-emerald-400 to-teal-200 bg-clip-text text-transparent">{user.name}</span>
+              Welcome back,{' '}
+              <span className="bg-gradient-to-r from-emerald-400 to-teal-200 bg-clip-text text-transparent">
+                {user.name || 'Patient'}
+              </span>
             </h1>
             <p className="text-xs sm:text-sm text-neutral-300 mt-1 max-w-lg">
-              Your overall health index is performing in optimal parameters today.
+              {latestVital
+                ? 'Your health telemetry is synced with your encrypted Cloud Firestore vault.'
+                : 'Log your first vital measurements to unlock your live Health Index score.'}
             </p>
           </div>
 
@@ -73,21 +99,32 @@ export const DashboardView: React.FC = () => {
                   strokeWidth="8"
                   fill="transparent"
                   strokeDasharray="201"
-                  strokeDashoffset={201 - (201 * healthScore) / 100}
+                  strokeDashoffset={201 - (201 * displayScore) / 100}
                   strokeLinecap="round"
                 />
               </svg>
               <div className="absolute flex flex-col items-center justify-center">
-                <span className="text-xl font-black text-white">{healthScore}</span>
+                <span className="text-xl font-black text-white">
+                  {healthScore !== null ? healthScore : '--'}
+                </span>
                 <span className="text-[9px] text-neutral-400 font-bold uppercase">/ 100</span>
               </div>
             </div>
             <div>
               <p className="text-xs font-extrabold text-amber-400 uppercase tracking-wider">Health Index</p>
-              <p className="text-sm font-bold text-white mt-0.5">Optimal Vitals</p>
-              <p className="text-[10px] text-emerald-400 font-medium flex items-center gap-1 mt-1">
-                <TrendingUp className="w-3 h-3" /> +3% higher than last week
+              <p className="text-sm font-bold text-white mt-0.5">
+                {healthScore === null
+                  ? 'No Vitals Yet'
+                  : healthScore >= 85
+                  ? 'Optimal Vitals'
+                  : 'Needs Attention'}
               </p>
+              <button
+                onClick={() => setActiveTab('records')}
+                className="text-[10px] text-emerald-400 font-medium flex items-center gap-1 mt-1 hover:underline"
+              >
+                <TrendingUp className="w-3 h-3" /> {latestVital ? 'View Vital Trends' : 'Record First Vitals'}
+              </button>
             </div>
           </div>
         </div>
@@ -160,7 +197,7 @@ export const DashboardView: React.FC = () => {
       <div>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-xs font-extrabold uppercase tracking-widest text-neutral-400">
-            Today's Vitals Snapshot
+            Today&apos;s Vitals Snapshot
           </h3>
           <button
             onClick={() => setActiveTab('records')}
@@ -171,47 +208,69 @@ export const DashboardView: React.FC = () => {
         </div>
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {/* Heart Rate */}
           <div className="p-4 rounded-2xl bg-[#181818] border border-white/5 relative overflow-hidden">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] font-bold text-neutral-400 uppercase">Heart Rate</span>
               <Heart className="w-4 h-4 text-red-500 animate-pulse fill-red-500/20" />
             </div>
-            <p className="text-2xl font-black text-white">{latestVital.heartRate} <span className="text-xs font-normal text-neutral-400">BPM</span></p>
-            <span className="text-[10px] text-emerald-400 font-semibold mt-1 block">Normal Rhythm</span>
+            <p className="text-2xl font-black text-white">
+              {latestVital ? latestVital.heartRate : '--'}{' '}
+              <span className="text-xs font-normal text-neutral-400">BPM</span>
+            </p>
+            <span className="text-[10px] text-emerald-400 font-semibold mt-1 block">
+              {latestVital ? 'Synced from Vault' : 'No reading logged'}
+            </span>
           </div>
 
-          {/* Blood Pressure */}
           <div className="p-4 rounded-2xl bg-[#181818] border border-white/5">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] font-bold text-neutral-400 uppercase">Blood Pressure</span>
               <Activity className="w-4 h-4 text-amber-400" />
             </div>
-            <p className="text-2xl font-black text-white">{latestVital.bloodPressureSys}/{latestVital.bloodPressureDia} <span className="text-xs font-normal text-neutral-400">mmHg</span></p>
-            <span className="text-[10px] text-amber-400 font-semibold mt-1 block">Ideal Range</span>
+            <p className="text-2xl font-black text-white">
+              {latestVital ? `${latestVital.bloodPressureSys}/${latestVital.bloodPressureDia}` : '--/--'}{' '}
+              <span className="text-xs font-normal text-neutral-400">mmHg</span>
+            </p>
+            <span className="text-[10px] text-amber-400 font-semibold mt-1 block">
+              {latestVital ? 'Latest Measurement' : 'No reading logged'}
+            </span>
           </div>
 
-          {/* Blood Sugar */}
           <div className="p-4 rounded-2xl bg-[#181818] border border-white/5">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] font-bold text-neutral-400 uppercase">Blood Sugar</span>
               <Droplets className="w-4 h-4 text-cyan-400" />
             </div>
-            <p className="text-2xl font-black text-white">{latestVital.bloodSugar} <span className="text-xs font-normal text-neutral-400">mg/dL</span></p>
-            <span className="text-[10px] text-emerald-400 font-semibold mt-1 block">Fasting Normal</span>
+            <p className="text-2xl font-black text-white">
+              {latestVital ? latestVital.bloodSugar : '--'}{' '}
+              <span className="text-xs font-normal text-neutral-400">mg/dL</span>
+            </p>
+            <span className="text-[10px] text-emerald-400 font-semibold mt-1 block">
+              {latestVital ? 'Recorded Level' : 'No reading logged'}
+            </span>
           </div>
 
-          {/* Water Intake */}
           <div className="p-4 rounded-2xl bg-[#181818] border border-white/5">
             <div className="flex items-center justify-between mb-2">
               <span className="text-[11px] font-bold text-neutral-400 uppercase">Water Intake</span>
-              <button onClick={handleQuickWaterAdd} className="p-1 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">
+              <button
+                onClick={handleQuickWaterAdd}
+                className="p-1 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold hover:bg-emerald-500/30 transition"
+              >
                 +250ml
               </button>
             </div>
-            <p className="text-2xl font-black text-white">{(latestVital.waterIntakeMl / 1000).toFixed(1)} <span className="text-xs font-normal text-neutral-400">L / 3.0L</span></p>
+            <p className="text-2xl font-black text-white">
+              {latestVital ? (latestVital.waterIntakeMl / 1000).toFixed(1) : '0.0'}{' '}
+              <span className="text-xs font-normal text-neutral-400">L / 3.0L</span>
+            </p>
             <div className="w-full bg-neutral-800 h-1.5 rounded-full mt-2 overflow-hidden">
-              <div className="bg-cyan-400 h-full rounded-full" style={{ width: `${Math.min(100, (latestVital.waterIntakeMl / 3000) * 100)}%` }}></div>
+              <div
+                className="bg-cyan-400 h-full rounded-full transition-all"
+                style={{
+                  width: `${Math.min(100, ((latestVital?.waterIntakeMl || 0) / 3000) * 100)}%`,
+                }}
+              ></div>
             </div>
           </div>
         </div>
@@ -219,42 +278,53 @@ export const DashboardView: React.FC = () => {
 
       {/* Two Column Section: Reminders & Upcoming Appointments */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        
-        {/* Today's Medicine Reminders */}
         <div className="p-5 rounded-3xl bg-[#181818] border border-white/10 space-y-4">
           <div className="flex items-center justify-between">
             <h4 className="text-sm font-bold text-white flex items-center gap-2">
-              <Pill className="w-4 h-4 text-emerald-400" /> Today's Medicine Reminders
+              <Pill className="w-4 h-4 text-emerald-400" /> Today&apos;s Medicine Reminders
             </h4>
             <button onClick={() => setActiveTab('reminders')} className="text-xs font-bold text-emerald-400 hover:underline">
               Schedule
             </button>
           </div>
 
-          <div className="space-y-2.5">
-            {reminders.map((rem) => (
-              <div key={rem.id} className="flex items-center justify-between p-3 rounded-2xl bg-neutral-900 border border-white/5">
-                <div>
-                  <p className="text-xs font-bold text-white">{rem.name}</p>
-                  <p className="text-[10px] text-neutral-400">{rem.dosage} • {rem.timeSlots.join(', ')} ({rem.instructions})</p>
+          {reminders.length === 0 ? (
+            <div className="text-center py-6 space-y-2">
+              <p className="text-xs text-neutral-400">No active medication reminders.</p>
+              <button
+                onClick={() => setActiveTab('reminders')}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-500/15 text-emerald-400 text-xs font-bold border border-emerald-500/30"
+              >
+                <Plus className="w-3.5 h-3.5" /> Add Medication
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {reminders.map((rem) => (
+                <div key={rem.id} className="flex items-center justify-between p-3 rounded-2xl bg-neutral-900 border border-white/5">
+                  <div>
+                    <p className="text-xs font-bold text-white">{rem.name}</p>
+                    <p className="text-[10px] text-neutral-400">
+                      {rem.dosage} • {rem.timeSlots.join(', ')} ({rem.instructions})
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => toggleReminderTaken(rem.id)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
+                      rem.takenToday
+                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                        : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    {rem.takenToday ? 'Taken' : 'Mark Taken'}
+                  </button>
                 </div>
-                <button
-                  onClick={() => toggleReminderTaken(rem.id)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
-                    rem.takenToday
-                      ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                      : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
-                  }`}
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  {rem.takenToday ? 'Taken' : 'Mark Taken'}
-                </button>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
-        {/* Upcoming Appointments */}
         <div className="p-5 rounded-3xl bg-[#181818] border border-white/10 space-y-4">
           <div className="flex items-center justify-between">
             <h4 className="text-sm font-bold text-white flex items-center gap-2">
@@ -266,30 +336,42 @@ export const DashboardView: React.FC = () => {
           </div>
 
           {appointments.length === 0 ? (
-            <p className="text-xs text-neutral-400 py-4 text-center">No upcoming appointments scheduled.</p>
+            <div className="text-center py-6 space-y-2">
+              <p className="text-xs text-neutral-400">No upcoming appointments scheduled.</p>
+              <button
+                onClick={() => setActiveTab('appointments')}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-amber-500/15 text-amber-400 text-xs font-bold border border-amber-500/30"
+              >
+                Book Specialist
+              </button>
+            </div>
           ) : (
-            appointments.map((app) => (
-              <div key={app.id} className="p-3.5 rounded-2xl bg-neutral-900 border border-white/5 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <img src={app.doctorPhoto} alt={app.doctorName} className="w-11 h-11 rounded-xl object-cover" />
-                  <div>
-                    <p className="text-xs font-bold text-white">{app.doctorName}</p>
-                    <p className="text-[10px] text-amber-400">{app.doctorSpecialty} • {app.type}</p>
-                    <p className="text-[10px] text-neutral-400 mt-0.5 flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-emerald-400" /> {app.date} at {app.timeSlot}
-                    </p>
+            <div className="space-y-2.5">
+              {appointments.slice(0, 3).map((app) => (
+                <div key={app.id} className="p-3.5 rounded-2xl bg-neutral-900 border border-white/5 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    {app.doctorPhoto && (
+                      <img src={app.doctorPhoto} alt={app.doctorName} className="w-11 h-11 rounded-xl object-cover" />
+                    )}
+                    <div>
+                      <p className="text-xs font-bold text-white">{app.doctorName}</p>
+                      <p className="text-[10px] text-amber-400">
+                        {app.doctorSpecialty} • {app.type}
+                      </p>
+                      <p className="text-[10px] text-neutral-400 mt-0.5 flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-emerald-400" /> {app.date} at {app.timeSlot}
+                      </p>
+                    </div>
                   </div>
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 text-[10px] font-bold border border-emerald-500/20">
+                    {app.status}
+                  </span>
                 </div>
-                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 text-[10px] font-bold border border-emerald-500/20">
-                  {app.status}
-                </span>
-              </div>
-            ))
+              ))}
+            </div>
           )}
         </div>
-
       </div>
-
     </div>
   );
 };

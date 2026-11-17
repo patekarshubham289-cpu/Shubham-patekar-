@@ -5,33 +5,50 @@ import {
   Sun,
   Moon,
   Globe,
-  Bell,
-  Lock,
-  Fingerprint,
   Database,
-  Trash2,
   LogOut,
-  ShieldCheck,
-  Info,
   ChevronRight,
-  Shield
+  Shield,
+  Download
 } from 'lucide-react';
 
 export const SettingsView: React.FC = () => {
-  const { settings, updateSettings, logout, setActiveTab, showToast } = useApp();
+  const {
+    settings,
+    updateSettings,
+    logout,
+    setActiveTab,
+    isAdmin,
+    user,
+    vitalLogs,
+    appointments,
+    reminders,
+    scanHistory,
+    showToast
+  } = useApp();
   const [showTerms, setShowTerms] = useState(false);
 
-  const handleBackup = () => {
-    showToast('Encrypted Health Vault cloud backup completed successfully', 'success');
-  };
-
-  const handleRestore = () => {
-    showToast('Vault restored from last cloud snapshot (Today 00:00 GMT)', 'success');
+  const handleExportVaultJson = () => {
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      profile: user,
+      vitalLogs,
+      appointments,
+      reminders,
+      scanHistory,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `HealthCarePlus_Vault_${user.id || 'export'}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('Health Vault JSON snapshot downloaded', 'success');
   };
 
   return (
     <div className="space-y-6 pb-24 text-white">
-      
       {/* Header */}
       <div className="p-6 rounded-3xl bg-gradient-to-br from-[#181818] via-[#1f2024] to-[#181818] border border-white/10 flex items-center justify-between shadow-2xl">
         <div className="flex items-center gap-3">
@@ -44,28 +61,32 @@ export const SettingsView: React.FC = () => {
             </span>
             <h1 className="text-2xl font-black text-white">Application Settings</h1>
             <p className="text-xs text-neutral-300">
-              Customize appearance, biometric authentication, notifications & data privacy
+              Customize appearance, notifications, Firestore sync & account security
             </p>
           </div>
         </div>
       </div>
 
-      {/* Admin Panel Quick Entry */}
-      <div className="p-4 rounded-3xl bg-gradient-to-r from-amber-500/10 via-amber-500/20 to-amber-500/10 border border-amber-500/30 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Shield className="w-6 h-6 text-amber-400" />
-          <div>
-            <h4 className="text-xs font-black text-white">System Administration Panel</h4>
-            <p className="text-[10px] text-neutral-300">Manage doctors, hospitals, system logs & user permissions</p>
+      {/* Admin Panel Quick Entry — Only visible to verified admins */}
+      {isAdmin && (
+        <div className="p-4 rounded-3xl bg-gradient-to-r from-amber-500/10 via-amber-500/20 to-amber-500/10 border border-amber-500/30 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Shield className="w-6 h-6 text-amber-400" />
+            <div>
+              <h4 className="text-xs font-black text-white">System Administration Panel</h4>
+              <p className="text-[10px] text-neutral-300">
+                Manage verified specialists, emergency event audits & platform metrics
+              </p>
+            </div>
           </div>
+          <button
+            onClick={() => setActiveTab('admin')}
+            className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs shadow-md transition"
+          >
+            Open Admin
+          </button>
         </div>
-        <button
-          onClick={() => setActiveTab('admin')}
-          className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs shadow-md transition"
-        >
-          Open Admin
-        </button>
-      </div>
+      )}
 
       {/* Theme & Display Options */}
       <div className="p-6 rounded-3xl bg-[#181818] border border-white/10 space-y-4">
@@ -75,10 +96,16 @@ export const SettingsView: React.FC = () => {
 
         <div className="flex items-center justify-between p-3.5 rounded-2xl bg-neutral-900 border border-white/5">
           <div className="flex items-center gap-3">
-            {settings.theme === 'dark' ? <Moon className="w-5 h-5 text-amber-400" /> : <Sun className="w-5 h-5 text-emerald-400" />}
+            {settings.theme === 'dark' ? (
+              <Moon className="w-5 h-5 text-amber-400" />
+            ) : (
+              <Sun className="w-5 h-5 text-emerald-400" />
+            )}
             <div>
               <p className="text-xs font-bold text-white">App Theme Mode</p>
-              <p className="text-[10px] text-neutral-400">Currently: {settings.theme === 'dark' ? 'Luxury Dark Canvas' : 'Clean Light Canvas'}</p>
+              <p className="text-[10px] text-neutral-400">
+                Currently: {settings.theme === 'dark' ? 'Luxury Dark Canvas' : 'Clean Light Canvas'}
+              </p>
             </div>
           </div>
 
@@ -95,13 +122,13 @@ export const SettingsView: React.FC = () => {
             <Globe className="w-5 h-5 text-cyan-400" />
             <div>
               <p className="text-xs font-bold text-white">Primary Language</p>
-              <p className="text-[10px] text-neutral-400">Multi-language AI translation enabled</p>
+              <p className="text-[10px] text-neutral-400">Multi-language AI translation preference</p>
             </div>
           </div>
 
           <select
             value={settings.language}
-            onChange={e => updateSettings({ language: e.target.value as any })}
+            onChange={(e) => updateSettings({ language: e.target.value as any })}
             className="p-2 rounded-xl bg-neutral-800 border border-white/10 text-xs font-bold text-white"
           >
             <option value="English">English</option>
@@ -116,7 +143,7 @@ export const SettingsView: React.FC = () => {
       {/* Notifications */}
       <div className="p-6 rounded-3xl bg-[#181818] border border-white/10 space-y-4">
         <h3 className="text-xs font-extrabold uppercase tracking-widest text-neutral-400">
-          Push Notifications & Alerts
+          Notification Preferences
         </h3>
 
         <div className="space-y-3 text-xs">
@@ -125,7 +152,7 @@ export const SettingsView: React.FC = () => {
             <input
               type="checkbox"
               checked={settings.pushNotifications}
-              onChange={e => updateSettings({ pushNotifications: e.target.checked })}
+              onChange={(e) => updateSettings({ pushNotifications: e.target.checked })}
               className="rounded border-neutral-700 text-emerald-500 focus:ring-0 w-4 h-4"
             />
           </label>
@@ -135,51 +162,39 @@ export const SettingsView: React.FC = () => {
             <input
               type="checkbox"
               checked={settings.smsAlerts}
-              onChange={e => updateSettings({ smsAlerts: e.target.checked })}
+              onChange={(e) => updateSettings({ smsAlerts: e.target.checked })}
               className="rounded border-neutral-700 text-emerald-500 focus:ring-0 w-4 h-4"
             />
           </label>
         </div>
       </div>
 
-      {/* Biometrics & Privacy */}
+      {/* Cloud Firestore Vault Export */}
       <div className="p-6 rounded-3xl bg-[#181818] border border-white/10 space-y-4">
         <h3 className="text-xs font-extrabold uppercase tracking-widest text-neutral-400">
-          Biometrics & Security
+          Cloud Firestore Data & Portability
         </h3>
 
-        <div className="space-y-3">
-          <label className="flex items-center justify-between p-3.5 rounded-2xl bg-neutral-900 border border-white/5 cursor-pointer text-xs">
-            <div className="flex items-center gap-3">
-              <Fingerprint className="w-5 h-5 text-emerald-400" />
-              <span>Enable FaceID / Fingerprint Lock</span>
-            </div>
-            <input
-              type="checkbox"
-              checked={settings.biometricsEnabled}
-              onChange={e => updateSettings({ biometricsEnabled: e.target.checked })}
-              className="rounded border-neutral-700 text-emerald-500 focus:ring-0 w-4 h-4"
-            />
-          </label>
-
-          <div className="flex items-center justify-between p-3.5 rounded-2xl bg-neutral-900 border border-white/5 text-xs">
-            <div className="flex items-center gap-3">
-              <Database className="w-5 h-5 text-cyan-400" />
-              <span>Encrypted Data Cloud Backup</span>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={handleBackup} className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">
-                Backup Now
-              </button>
-              <button onClick={handleRestore} className="px-3 py-1.5 rounded-xl bg-neutral-800 text-neutral-300 font-bold">
-                Restore
-              </button>
+        <div className="flex items-center justify-between p-3.5 rounded-2xl bg-neutral-900 border border-white/5 text-xs">
+          <div className="flex items-center gap-3">
+            <Database className="w-5 h-5 text-cyan-400" />
+            <div>
+              <p className="font-bold text-white">Real-Time Cloud Firestore Sync Active</p>
+              <p className="text-[10px] text-neutral-400">
+                {vitalLogs.length} vital logs • {appointments.length} appointments • {reminders.length} reminders
+              </p>
             </div>
           </div>
+          <button
+            onClick={handleExportVaultJson}
+            className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30 flex items-center gap-1.5"
+          >
+            <Download className="w-3.5 h-3.5" /> Export JSON
+          </button>
         </div>
       </div>
 
-      {/* Terms & Privacy */}
+      {/* Terms & Sign Out */}
       <div className="p-6 rounded-3xl bg-[#181818] border border-white/10 space-y-3 text-xs">
         <button
           onClick={() => setShowTerms(true)}
@@ -197,21 +212,22 @@ export const SettingsView: React.FC = () => {
         </button>
       </div>
 
-      {/* Modal Terms */}
       {showTerms && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
           <div className="w-full max-w-lg bg-[#181818] border border-white/10 rounded-3xl p-6 text-white space-y-4">
             <h3 className="text-lg font-bold">Privacy Policy & Terms</h3>
             <p className="text-xs text-neutral-300 leading-relaxed">
-              HealthCare+ protects user health telemetry using zero-knowledge end-to-end encryption. All medical records are stored strictly in accordance with HIPAA standards.
+              HealthCare+ protects user health telemetry using Firebase Authentication and strict Firestore Security Rules ensuring each authenticated patient can only access their own records.
             </p>
-            <button onClick={() => setShowTerms(false)} className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold">
+            <button
+              onClick={() => setShowTerms(false)}
+              className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-xs font-bold"
+            >
               Close
             </button>
           </div>
         </div>
       )}
-
     </div>
   );
 };

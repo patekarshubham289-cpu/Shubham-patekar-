@@ -1,0 +1,265 @@
+{
+  "entities": {
+    "Profile": {
+      "title": "Profile",
+      "description": "Authenticated patient or clinician profile stored at /profiles/{userId}",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "avatar": { "type": "string", "maxLength": 500 },
+        "bloodGroup": { "type": "string", "maxLength": 10 },
+        "age": { "type": "integer" },
+        "gender": { "type": "string", "enum": ["Male", "Female", "Other"] },
+        "heightCm": { "type": "number" },
+        "weightKg": { "type": "number" },
+        "bmi": { "type": "number" },
+        "medicalConditions": { "type": "array" },
+        "allergies": { "type": "array" },
+        "isDonor": { "type": "boolean" },
+        "role": { "type": "string", "enum": ["patient", "admin", "doctor"] },
+        "settings": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "email", "role", "createdAt", "updatedAt"]
+    },
+    "HealthRecord": {
+      "title": "HealthRecord",
+      "description": "Patient vital measurements and wellness log",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "timestamp": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "heartRate": { "type": "number" },
+        "bloodPressureSys": { "type": "number" },
+        "bloodPressureDia": { "type": "number" },
+        "bloodSugar": { "type": "number" },
+        "bmi": { "type": "number" },
+        "weightKg": { "type": "number" },
+        "temperatureC": { "type": "number" },
+        "spO2": { "type": "number" },
+        "waterIntakeMl": { "type": "number" },
+        "sleepHours": { "type": "number" },
+        "mood": { "type": "string", "enum": ["Excellent", "Good", "Neutral", "Fatigued", "Unwell"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "timestamp", "heartRate", "bloodPressureSys", "bloodPressureDia", "bloodSugar", "spO2", "mood", "createdAt", "updatedAt"]
+    },
+    "Doctor": {
+      "title": "Doctor",
+      "description": "Verified medical specialist profile managed by administrators",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "title": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "specialty": { "type": "string", "minLength": 2, "maxLength": 80 },
+        "experienceYears": { "type": "integer" },
+        "rating": { "type": "number" },
+        "reviewCount": { "type": "integer" },
+        "feeUsd": { "type": "number" },
+        "photo": { "type": "string", "maxLength": 500 },
+        "address": { "type": "string", "maxLength": 240 },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "hospital": { "type": "string", "maxLength": 160 },
+        "availableSlots": { "type": "array" },
+        "bio": { "type": "string", "maxLength": 1000 },
+        "languages": { "type": "array" },
+        "verified": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "title", "specialty", "feeUsd", "hospital", "verified", "createdAt", "updatedAt"]
+    },
+    "Appointment": {
+      "title": "Appointment",
+      "description": "Patient medical consultation booking linked to userId and doctorId",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "doctorId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "doctorName": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "doctorSpecialty": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "doctorPhoto": { "type": "string", "maxLength": 500 },
+        "date": { "type": "string", "maxLength": 32 },
+        "timeSlot": { "type": "string", "maxLength": 32 },
+        "type": { "type": "string", "enum": ["In-Person", "Video Consultation"] },
+        "status": { "type": "string", "enum": ["Upcoming", "Completed", "Cancelled"] },
+        "symptoms": { "type": "string", "maxLength": 1000 },
+        "meetingLink": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "doctorId", "doctorName", "doctorSpecialty", "date", "timeSlot", "type", "status", "createdAt", "updatedAt"]
+    },
+    "MedicineReminder": {
+      "title": "MedicineReminder",
+      "description": "Patient medication schedule and adherence state",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "dosage": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "frequency": { "type": "string", "enum": ["Daily", "Weekly", "As Needed"] },
+        "timeSlots": { "type": "array" },
+        "instructions": { "type": "string", "enum": ["Before Food", "After Food", "With Water"] },
+        "pillsLeft": { "type": "integer" },
+        "takenToday": { "type": "boolean" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "dosage", "frequency", "timeSlots", "instructions", "pillsLeft", "takenToday", "active", "createdAt", "updatedAt"]
+    },
+    "MedicineScan": {
+      "title": "MedicineScan",
+      "description": "AI medicine scan result archived by a patient",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "timestamp": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "composition": { "type": "string", "maxLength": 500 },
+        "uses": { "type": "array" },
+        "benefits": { "type": "array" },
+        "sideEffects": { "type": "array" },
+        "dosage": { "type": "string", "maxLength": 500 },
+        "warnings": { "type": "array" },
+        "storage": { "type": "string", "maxLength": 300 },
+        "alternativeMedicines": { "type": "array" },
+        "priceRange": { "type": "string", "maxLength": 100 },
+        "disclaimer": { "type": "string", "maxLength": 500 },
+        "saved": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "timestamp", "name", "composition", "dosage", "saved", "createdAt", "updatedAt"]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "AI Health Companion conversation turn owned by userId",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "sender": { "type": "string", "enum": ["user", "assistant"] },
+        "text": { "type": "string", "minLength": 1, "maxLength": 8000 },
+        "category": { "type": "string", "enum": ["general", "symptom", "medicine", "diet", "report"] },
+        "timestamp": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "sender", "text", "timestamp", "createdAt", "updatedAt"]
+    },
+    "EmergencyContact": {
+      "title": "EmergencyContact",
+      "description": "Designated emergency contact for a patient",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "relation": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "phone": { "type": "string", "minLength": 3, "maxLength": 32 },
+        "isPrimary": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "relation", "phone", "isPrimary", "createdAt", "updatedAt"]
+    },
+    "Notification": {
+      "title": "Notification",
+      "description": "User-scoped notification alert",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "type": { "type": "string", "enum": ["reminder", "appointment", "sos", "system"] },
+        "read": { "type": "boolean" },
+        "appointmentId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "message", "type", "read", "createdAt", "updatedAt"]
+    },
+    "EmergencyEvent": {
+      "title": "EmergencyEvent",
+      "description": "Emergency SOS dispatch record owned by patient and auditable by admins",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "patientName": { "type": "string", "maxLength": 120 },
+        "sosId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userLocation": { "type": "string", "maxLength": 240 },
+        "status": { "type": "string", "enum": ["DISPATCHED", "EN_ROUTE", "RESOLVED", "CANCELLED"] },
+        "ambulanceEtaMinutes": { "type": "integer" },
+        "dispatchedUnit": { "type": "string", "maxLength": 120 },
+        "notifiedContactsCount": { "type": "integer" },
+        "note": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "sosId", "userLocation", "status", "ambulanceEtaMinutes", "dispatchedUnit", "notifiedContactsCount", "createdAt", "updatedAt"]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Trusted administrator lookup document",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "email", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/profiles/{userId}": {
+      "schema": { "$ref": "#/entities/Profile" },
+      "description": "Private patient profiles keyed by Firebase Auth UID"
+    },
+    "/health_records/{recordId}": {
+      "schema": { "$ref": "#/entities/HealthRecord" },
+      "description": "Patient vital logs scoped by userId"
+    },
+    "/doctors/{doctorId}": {
+      "schema": { "$ref": "#/entities/Doctor" },
+      "description": "Verified doctor directory readable by signed-in users and managed by admins"
+    },
+    "/appointments/{appointmentId}": {
+      "schema": { "$ref": "#/entities/Appointment" },
+      "description": "Patient doctor appointments linked via userId and doctorId"
+    },
+    "/medicine_reminders/{reminderId}": {
+      "schema": { "$ref": "#/entities/MedicineReminder" },
+      "description": "Patient medication schedules scoped by userId"
+    },
+    "/medicine_scan_history/{scanId}": {
+      "schema": { "$ref": "#/entities/MedicineScan" },
+      "description": "Saved AI medicine scan history scoped by userId"
+    },
+    "/chat_history/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Patient AI health companion messages scoped by userId"
+    },
+    "/emergency_contacts/{contactId}": {
+      "schema": { "$ref": "#/entities/EmergencyContact" },
+      "description": "Patient emergency contacts scoped by userId"
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "User notifications scoped by userId"
+    },
+    "/emergency_events/{eventId}": {
+      "schema": { "$ref": "#/entities/EmergencyEvent" },
+      "description": "Emergency SOS dispatch events scoped by userId and readable by admins"
+    },
+    "/admins/{userId}": {
+      "schema": { "$ref": "#/entities/AdminUser" },
+      "description": "Trusted admin registry"
+    }
+  }
+}

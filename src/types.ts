@@ -2,6 +2,7 @@ export type ThemeMode = 'dark' | 'light';
 
 export interface UserProfile {
   id: string;
+  userId?: string;
   name: string;
   email: string;
   phone: string;
@@ -17,18 +18,25 @@ export interface UserProfile {
   emergencyContacts: EmergencyContact[];
   isDonor: boolean;
   role: 'patient' | 'admin' | 'doctor';
+  settings?: SystemSettings;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface EmergencyContact {
   id: string;
+  userId?: string;
   name: string;
   relation: string;
   phone: string;
   isPrimary: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface VitalLog {
   id: string;
+  userId?: string;
   timestamp: string; // ISO date string
   heartRate: number; // bpm
   bloodPressureSys: number; // mmHg
@@ -41,10 +49,13 @@ export interface VitalLog {
   waterIntakeMl: number;
   sleepHours: number;
   mood: 'Excellent' | 'Good' | 'Neutral' | 'Fatigued' | 'Unwell';
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface MedicineScanResult {
   id: string;
+  userId?: string;
   timestamp: string;
   imageUrl?: string;
   name: string;
@@ -59,15 +70,20 @@ export interface MedicineScanResult {
   priceRange: string;
   disclaimer: string;
   saved: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface ChatMessage {
   id: string;
+  userId?: string;
   sender: 'user' | 'assistant';
   text: string;
   timestamp: string;
   audioUrl?: string;
   category?: 'general' | 'symptom' | 'medicine' | 'diet' | 'report';
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Doctor {
@@ -87,10 +103,14 @@ export interface Doctor {
   availableSlots: string[];
   bio: string;
   languages: string[];
+  verified?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface Appointment {
   id: string;
+  userId?: string;
   doctorId: string;
   doctorName: string;
   doctorSpecialty: string;
@@ -102,6 +122,7 @@ export interface Appointment {
   symptoms?: string;
   meetingLink?: string;
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface NearbyPlace {
@@ -120,14 +141,44 @@ export interface NearbyPlace {
 
 export interface MedicineReminder {
   id: string;
+  userId?: string;
   name: string;
   dosage: string;
   frequency: 'Daily' | 'Weekly' | 'As Needed';
-  timeSlots: string[]; // e.g. ["08:00", "20:00"]
+  timeSlots: string[]; // e.g. ["08:00 AM", "08:00 PM"]
   instructions: 'Before Food' | 'After Food' | 'With Water';
   pillsLeft: number;
   takenToday: boolean;
   active: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface NotificationItem {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  type: 'reminder' | 'appointment' | 'sos' | 'system';
+  read: boolean;
+  appointmentId?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export interface EmergencyEvent {
+  id: string;
+  userId: string;
+  patientName?: string;
+  sosId: string;
+  userLocation: string;
+  status: 'DISPATCHED' | 'EN_ROUTE' | 'RESOLVED' | 'CANCELLED';
+  ambulanceEtaMinutes: number;
+  dispatchedUnit: string;
+  notifiedContactsCount: number;
+  note?: string;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export interface SystemSettings {
