@@ -76,10 +76,14 @@ export function getAuthErrorMessage(error: unknown): string {
       return 'This account has been disabled. Contact support for assistance.';
     case 'auth/popup-closed-by-user':
       return 'Google sign-in popup was closed before completing authentication.';
+    case 'auth/cancelled-popup-request':
+      return 'A Google sign-in popup request is already open. Complete that popup or try again.';
     case 'auth/popup-blocked':
       return 'Browser blocked the sign-in popup. Please allow popups for this site and try again.';
+    case 'auth/account-exists-with-different-credential':
+      return 'An account already exists with the same email using a different sign-in method. Try signing in with your original method.';
     case 'auth/operation-not-allowed':
-      return 'Email/Password sign-in is not enabled in Firebase Authentication Console yet. Enable it under Authentication → Sign-in method, or use "Continue with Google" below.';
+      return 'Email/Password sign-in is not enabled in Firebase Authentication Console yet. Use "Continue with Google" below for instant access, or enable Email/Password under Firebase Console → Authentication → Sign-in method.';
     case 'auth/unauthorized-domain':
       return 'This preview domain is not listed under Firebase Authentication → Settings → Authorized domains yet.';
     case 'auth/expired-action-code':

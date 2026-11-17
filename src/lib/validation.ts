@@ -1,6 +1,8 @@
 // Validation and sanitization helpers synchronized with firebase-blueprint.json & firestore.rules
 
 const ID_REGEX = /^[a-zA-Z0-9_\-]+$/;
+const PHONE_REGEX = /^[+\d][\d\s\-().]{5,25}$/;
+const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'Unknown'];
 
 export function sanitizeString(val: unknown, maxLength: number): string {
   if (typeof val !== 'string') return '';
@@ -43,4 +45,29 @@ export function validatePasswordStrength(password: string): string | null {
 
 export function validateEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
+export function validatePhone(phone: string, required = false): boolean {
+  const trimmed = phone.trim();
+  if (!trimmed) return !required;
+  return PHONE_REGEX.test(trimmed);
+}
+
+export function isValidBloodGroup(bg: string): boolean {
+  return BLOOD_GROUPS.includes(bg.trim());
+}
+
+export function buildSlotLockId(doctorId: string, date: string, timeSlot: string): string {
+  const cleanDoctor = doctorId.replace(/[^a-zA-Z0-9_\-]/g, '');
+  const cleanDate = date.replace(/[^0-9\-]/g, '');
+  const cleanSlot = timeSlot.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  return `${cleanDoctor}_${cleanDate}_${cleanSlot}`.slice(0, 128);
+}
+
+export function getTodayDateString(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
 import { MedicineScanResult } from '../../types';
 import {
@@ -13,7 +13,8 @@ import {
   DollarSign,
   ShieldAlert,
   ChevronRight,
-  Trash2
+  Trash2,
+  CalendarClock
 } from 'lucide-react';
 
 export const MedicineScannerView: React.FC = () => {
@@ -49,29 +50,76 @@ export const MedicineScannerView: React.FC = () => {
     setCameraActive(false);
   };
 
+  useEffect(() => {
+    return () => {
+      if (videoRef.current && videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, []);
+
   const capturePhoto = () => {
     if (videoRef.current && canvasRef.current) {
       const context = canvasRef.current.getContext('2d');
       if (context) {
-        canvasRef.current.width = videoRef.current.videoWidth || 640;
-        canvasRef.current.height = videoRef.current.videoHeight || 480;
-        context.drawImage(videoRef.current, 0, 0);
-        const dataUrl = canvasRef.current.toDataURL('image/jpeg');
+        const rawW = videoRef.current.videoWidth || 640;
+        const rawH = videoRef.current.videoHeight || 480;
+        const scale = Math.min(1, 1280 / Math.max(rawW, rawH));
+        canvasRef.current.width = Math.round(rawW * scale);
+        canvasRef.current.height = Math.round(rawH * scale);
+        context.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
+        const dataUrl = canvasRef.current.toDataURL('image/jpeg', 0.85);
         stopCamera();
-        analyzeMedicine(dataUrl);
+        analyzeMedicine(dataUrl, undefined, 'image/jpeg');
       }
     }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
+  const downscaleImageDataUrl = (file: File): Promise<{ dataUrl: string; mimeType: string }> =>
+    new Promise((resolve, reject) => {
       const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Could not read uploaded file.'));
       reader.onloadend = () => {
-        const base64 = reader.result as string;
-        analyzeMedicine(base64, undefined, file.type || 'image/jpeg');
+        const rawUrl = reader.result as string;
+        const img = new Image();
+        img.onerror = () => resolve({ dataUrl: rawUrl, mimeType: file.type || 'image/jpeg' });
+        img.onload = () => {
+          const maxDim = 1280;
+          if (img.width <= maxDim && img.height <= maxDim && file.size <= 1_800_000) {
+            resolve({ dataUrl: rawUrl, mimeType: file.type || 'image/jpeg' });
+            return;
+          }
+          const ratio = Math.min(1, maxDim / Math.max(img.width, img.height));
+          const offscreen = document.createElement('canvas');
+          offscreen.width = Math.round(img.width * ratio);
+          offscreen.height = Math.round(img.height * ratio);
+          const ctx = offscreen.getContext('2d');
+          if (!ctx) {
+            resolve({ dataUrl: rawUrl, mimeType: file.type || 'image/jpeg' });
+            return;
+          }
+          ctx.drawImage(img, 0, 0, offscreen.width, offscreen.height);
+          resolve({ dataUrl: offscreen.toDataURL('image/jpeg', 0.85), mimeType: 'image/jpeg' });
+        };
+        img.src = rawUrl;
       };
       reader.readAsDataURL(file);
+    });
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('Image exceeds 10 MB limit. Please select a smaller photo.', 'error');
+      return;
+    }
+    try {
+      const { dataUrl, mimeType } = await downscaleImageDataUrl(file);
+      await analyzeMedicine(dataUrl, undefined, mimeType);
+    } catch {
+      showToast('Failed to process uploaded image.', 'error');
     }
   };
 
@@ -112,10 +160,14 @@ export const MedicineScannerView: React.FC = () => {
     }
   };
 
+  const expiryUnconfirmed =
+    !currentResult?.expiryDate ||
+    /not visible|not legible|not applicable|inspect physical/i.test(currentResult.expiryDate);
+
   return (
     <div className="space-y-6 pb-24 text-white">
       {/* Title Header */}
-      <div className="p-6 rounded-3xl bg-gradient-to-br from-[#181818] via-[#1b2520] to-[#121f18] border border-emerald-500/30 shadow-2xl">
+      <div className="p-6 rounded-3xl bg-gradient-to-br from-[#181818] via-[#1b2520] to-[#121f18] border border-emerald-500/30 shadow-2xl space-y-3">
         <div className="flex items-center gap-3">
           <div className="p-3 rounded-2xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
             <ScanLine className="w-7 h-7 animate-pulse" />
@@ -126,9 +178,16 @@ export const MedicineScannerView: React.FC = () => {
             </span>
             <h1 className="text-2xl font-black text-white">AI Medicine Scanner</h1>
             <p className="text-xs text-neutral-300">
-              Instant composition, dosage, warnings & generic alternatives saved to your Firestore vault
+              Extract composition, legible expiry date, uses, storage &amp; warnings to your Firestore vault
             </p>
           </div>
+        </div>
+
+        <div className="p-3 rounded-2xl bg-amber-950/30 border border-amber-500/30 text-[11px] text-amber-200 flex items-start gap-2">
+          <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <span>
+            <strong>Medical Safety Disclaimer:</strong> Results provide general pharmaceutical reference only and are <strong>not</strong> a personal prescription. Always inspect the physical label for batch/expiry date and follow your licensed clinician&apos;s instructions.
+          </span>
         </div>
       </div>
 
@@ -139,7 +198,7 @@ export const MedicineScannerView: React.FC = () => {
             <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
             <div className="absolute inset-8 border-2 border-dashed border-emerald-400/70 rounded-2xl pointer-events-none flex items-center justify-center">
               <span className="text-xs font-bold text-emerald-400 bg-black/60 px-3 py-1 rounded-full">
-                Align Medicine Box or Strip Here
+                Align Medicine Box, Strip &amp; Expiry Date Here
               </span>
             </div>
             <div className="absolute bottom-4 flex gap-3 z-10">
@@ -147,7 +206,7 @@ export const MedicineScannerView: React.FC = () => {
                 onClick={capturePhoto}
                 className="px-6 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-extrabold text-xs shadow-lg flex items-center gap-2"
               >
-                <Camera className="w-4 h-4" /> Capture & Scan
+                <Camera className="w-4 h-4" /> Capture &amp; Scan
               </button>
               <button
                 onClick={stopCamera}
@@ -167,7 +226,7 @@ export const MedicineScannerView: React.FC = () => {
                 <Camera className="w-6 h-6" />
               </div>
               <p className="text-sm font-extrabold text-white">Use Device Camera</p>
-              <p className="text-[11px] text-neutral-400">Point lens at pill bottle, box or prescription</p>
+              <p className="text-[11px] text-neutral-400">Capture pill strip, bottle or box label</p>
             </button>
 
             <label className="p-6 rounded-2xl bg-neutral-900 hover:bg-neutral-800 border border-white/10 text-center space-y-2 transition cursor-pointer group block">
@@ -184,7 +243,7 @@ export const MedicineScannerView: React.FC = () => {
         <canvas ref={canvasRef} className="hidden" />
 
         <div className="pt-3 border-t border-white/10">
-          <p className="text-xs font-bold text-neutral-400 mb-2">Or Search Medicine Manually</p>
+          <p className="text-xs font-bold text-neutral-400 mb-2">Or Search Medicine by Name</p>
           <div className="flex gap-2">
             <div className="relative flex-1">
               <Search className="w-4 h-4 text-neutral-500 absolute left-3.5 top-3.5" />
@@ -193,7 +252,7 @@ export const MedicineScannerView: React.FC = () => {
                 value={manualQuery}
                 onChange={(e) => setManualQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && manualQuery.trim() && analyzeMedicine(undefined, manualQuery)}
-                placeholder="e.g. Augmentin 625, Metformin, Lipitor, Paracetamol..."
+                placeholder="e.g. Dolo 650, Augmentin 625, Crocin, Metformin, Paracetamol..."
                 className="w-full pl-10 pr-4 py-3 rounded-xl bg-neutral-900 border border-white/10 text-xs text-white focus:outline-none focus:border-emerald-500"
               />
             </div>
@@ -211,92 +270,139 @@ export const MedicineScannerView: React.FC = () => {
       {isAnalyzing && (
         <div className="p-8 rounded-3xl bg-[#181818] border border-amber-500/40 text-center space-y-4 animate-pulse">
           <Sparkles className="w-10 h-10 text-amber-400 mx-auto animate-spin" />
-          <h3 className="text-lg font-black text-amber-400">Gemini AI Analyzing Chemical Composition...</h3>
-          <p className="text-xs text-neutral-400">Processing active pharmaceutical ingredients, side effects & alternatives.</p>
+          <h3 className="text-lg font-black text-amber-400">Gemini AI Analyzing Packaging &amp; Composition...</h3>
+          <p className="text-xs text-neutral-400">Checking visible expiry stamp, active ingredients, warnings &amp; storage guidance.</p>
         </div>
       )}
 
       {currentResult && !isAnalyzing && (
-        <div className="p-6 rounded-3xl bg-[#181818] border border-emerald-500/30 space-y-6 shadow-2xl">
-          <div className="flex items-start justify-between border-b border-white/10 pb-4">
+        <div className="p-6 rounded-3xl bg-[#181818] border border-emerald-500/30 space-y-5 shadow-2xl">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-white/10 pb-4">
             <div>
               <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest bg-emerald-500/10 px-2.5 py-0.5 rounded border border-emerald-500/30">
-                VERIFIED AI ANALYSIS
+                GEMINI PACKAGING ANALYSIS
               </span>
               <h2 className="text-2xl font-black text-white mt-1">{currentResult.name}</h2>
-              <p className="text-xs font-semibold text-amber-400 mt-0.5">{currentResult.composition}</p>
+              <p className="text-xs font-semibold text-amber-400 mt-0.5">
+                {currentResult.composition || 'Active composition not identified — verify packaging'}
+              </p>
             </div>
             <span className="text-xs font-bold text-neutral-400 bg-neutral-900 px-3 py-1.5 rounded-xl border border-white/10">
-              Est. Price: {currentResult.priceRange}
+              Est. Price: {currentResult.priceRange || 'Not identified'}
             </span>
+          </div>
+
+          {/* Legible Expiry Date Banner */}
+          <div
+            className={`p-4 rounded-2xl border flex items-start gap-3 ${
+              expiryUnconfirmed
+                ? 'bg-amber-950/30 border-amber-500/40 text-amber-200'
+                : 'bg-emerald-950/30 border-emerald-500/40 text-emerald-200'
+            }`}
+          >
+            <CalendarClock
+              className={`w-5 h-5 shrink-0 mt-0.5 ${
+                expiryUnconfirmed ? 'text-amber-400' : 'text-emerald-400'
+              }`}
+            />
+            <div className="text-xs">
+              <p className="font-extrabold uppercase tracking-wider text-[10px]">
+                Printed Expiry Date (Extracted Only When Clearly Legible)
+              </p>
+              <p className="font-bold mt-0.5">
+                {currentResult.expiryDate || 'Not legible / not visible — inspect physical packaging before use.'}
+              </p>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="p-4 rounded-2xl bg-neutral-900 border border-white/5 space-y-2">
               <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4" /> Primary Indications & Benefits
+                <CheckCircle2 className="w-4 h-4" /> General Uses
               </h4>
-              <ul className="space-y-1 text-xs text-neutral-300">
-                {currentResult.uses.map((use, i) => (
-                  <li key={i} className="flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> {use}
-                  </li>
-                ))}
-              </ul>
+              {currentResult.uses.length === 0 ? (
+                <p className="text-xs text-neutral-400">Uses not identified from provided input.</p>
+              ) : (
+                <ul className="space-y-1 text-xs text-neutral-300">
+                  {currentResult.uses.map((use, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0"></span>
+                      <span>{use}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             <div className="p-4 rounded-2xl bg-neutral-900 border border-white/5 space-y-2">
               <h4 className="text-xs font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Pill className="w-4 h-4" /> Recommended Clinical Dosage
+                <Pill className="w-4 h-4" /> General Labeling Reference (Not a Prescription)
               </h4>
-              <p className="text-xs text-neutral-300 leading-relaxed">{currentResult.dosage}</p>
-              <p className="text-[10px] text-neutral-500 mt-2">Storage: {currentResult.storage}</p>
+              <p className="text-xs text-neutral-300 leading-relaxed">
+                {currentResult.dosage || 'Consult a licensed physician or pharmacist for individualized dosing.'}
+              </p>
+              <p className="text-[11px] text-neutral-400 mt-2">
+                <strong>Storage:</strong> {currentResult.storage || 'Check printed label for storage temperature.'}
+              </p>
             </div>
 
             <div className="p-4 rounded-2xl bg-neutral-900 border border-white/5 space-y-2">
               <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
                 <AlertTriangle className="w-4 h-4" /> Reported Side Effects
               </h4>
-              <ul className="space-y-1 text-xs text-neutral-300">
-                {currentResult.sideEffects.map((se, i) => (
-                  <li key={i} className="flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span> {se}
-                  </li>
-                ))}
-              </ul>
+              {currentResult.sideEffects.length === 0 ? (
+                <p className="text-xs text-neutral-400">None identified — review official medication leaflet.</p>
+              ) : (
+                <ul className="space-y-1 text-xs text-neutral-300">
+                  {currentResult.sideEffects.map((se, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0"></span>
+                      <span>{se}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             <div className="p-4 rounded-2xl bg-neutral-900 border border-white/5 space-y-2">
               <h4 className="text-xs font-bold text-red-400 uppercase tracking-wider flex items-center gap-1.5">
-                <ShieldAlert className="w-4 h-4" /> Critical Warnings
+                <ShieldAlert className="w-4 h-4" /> Safety Warnings
               </h4>
-              <ul className="space-y-1 text-xs text-neutral-300">
-                {currentResult.warnings.map((w, i) => (
-                  <li key={i} className="flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-red-400"></span> {w}
-                  </li>
+              {currentResult.warnings.length === 0 ? (
+                <p className="text-xs text-neutral-400">Check package leaflet &amp; consult a pharmacist.</p>
+              ) : (
+                <ul className="space-y-1 text-xs text-neutral-300">
+                  {currentResult.warnings.map((w, i) => (
+                    <li key={i} className="flex items-start gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-400 mt-1.5 shrink-0"></span>
+                      <span>{w}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+
+          {currentResult.alternativeMedicines.length > 0 && (
+            <div className="p-4 rounded-2xl bg-neutral-900 border border-white/5 space-y-3">
+              <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                <DollarSign className="w-4 h-4" /> Common Generic Ingredient Equivalents
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {currentResult.alternativeMedicines.map((alt, i) => (
+                  <div key={i} className="p-3 rounded-xl bg-neutral-950 border border-white/5 text-xs">
+                    <p className="font-bold text-white">{alt.name}</p>
+                    <p className="text-emerald-400 font-semibold">{alt.approxPrice}</p>
+                    <p className="text-[10px] text-neutral-400">{alt.manufacturer}</p>
+                  </div>
                 ))}
-              </ul>
+              </div>
             </div>
-          </div>
+          )}
 
-          <div className="p-4 rounded-2xl bg-neutral-900 border border-white/5 space-y-3">
-            <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
-              <DollarSign className="w-4 h-4" /> Lower-Cost Generic Alternatives
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              {currentResult.alternativeMedicines.map((alt, i) => (
-                <div key={i} className="p-3 rounded-xl bg-neutral-950 border border-white/5 text-xs">
-                  <p className="font-bold text-white">{alt.name}</p>
-                  <p className="text-emerald-400 font-semibold">{alt.approxPrice}</p>
-                  <p className="text-[10px] text-neutral-400">{alt.manufacturer}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <p className="text-[10px] text-neutral-500 italic text-center pt-2 border-t border-white/5">
-            {currentResult.disclaimer}
+          <p className="text-[11px] text-amber-300/90 italic text-center pt-2 border-t border-white/5">
+            {currentResult.disclaimer ||
+              'Informational labeling overview only — NOT a personal prescription. Always verify physical expiry dates and consult a licensed clinician or pharmacist.'}
           </p>
         </div>
       )}
@@ -315,13 +421,15 @@ export const MedicineScannerView: React.FC = () => {
             {scanHistory.map((scan) => (
               <div
                 key={scan.id}
-                className="p-3.5 rounded-2xl bg-neutral-900 hover:bg-neutral-800 border border-white/5 flex items-center justify-between transition"
+                className="p-3.5 rounded-2xl bg-neutral-900 hover:bg-neutral-800 border border-white/5 flex items-center justify-between transition gap-2"
               >
-                <div onClick={() => setSelectedScan(scan)} className="flex-1 cursor-pointer">
-                  <p className="text-xs font-bold text-white">{scan.name}</p>
-                  <p className="text-[10px] text-neutral-400">{scan.composition}</p>
+                <div onClick={() => setSelectedScan(scan)} className="flex-1 cursor-pointer min-w-0">
+                  <p className="text-xs font-bold text-white truncate">{scan.name}</p>
+                  <p className="text-[10px] text-neutral-400 truncate">
+                    {scan.composition} • Exp: {scan.expiryDate || 'Not visible'}
+                  </p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                   <button
                     onClick={() => {
                       if (selectedScan?.id === scan.id) setSelectedScan(null);
@@ -329,6 +437,7 @@ export const MedicineScannerView: React.FC = () => {
                     }}
                     className="p-1.5 rounded-lg bg-neutral-800 hover:bg-red-950/60 text-neutral-400 hover:text-red-400 transition"
                     title="Delete scan"
+                    aria-label={`Delete ${scan.name}`}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>

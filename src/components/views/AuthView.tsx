@@ -107,9 +107,15 @@ export const AuthView: React.FC = () => {
 
   const switchMode = (next: AuthMode) => {
     setMode(next);
+    setPassword('');
+    setConfirmPassword('');
     setErrorMsg(null);
     setSuccessMsg(null);
   };
+
+  const isProviderDisabledError = Boolean(
+    errorMsg && errorMsg.includes('not enabled in Firebase Authentication Console')
+  );
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -258,7 +264,7 @@ export const AuthView: React.FC = () => {
             <p className="text-xs text-neutral-300 leading-relaxed">
               We sent a verification link to{' '}
               <span className="text-emerald-400 font-bold">{firebaseUser.email}</span>.
-              Please verify your email to unlock your encrypted HealthCare+ medical vault.
+              Please verify your email to unlock your protected HealthCare+ medical vault.
             </p>
           </div>
 
@@ -360,7 +366,14 @@ export const AuthView: React.FC = () => {
         {errorMsg && (
           <div className="mb-4 p-3 rounded-xl bg-red-950/50 border border-red-500/40 text-red-300 text-xs flex items-start gap-2">
             <AlertCircle className="w-4 h-4 shrink-0 text-red-400 mt-0.5" />
-            <span>{errorMsg}</span>
+            <div className="space-y-1">
+              <p>{errorMsg}</p>
+              {isProviderDisabledError && isGoogleAuthConfigured && (
+                <p className="text-[11px] text-emerald-300 font-semibold">
+                  Tip: Tap &quot;Continue with Google&quot; below for instant sign-in.
+                </p>
+              )}
+            </div>
           </div>
         )}
 
@@ -387,7 +400,7 @@ export const AuthView: React.FC = () => {
                       required
                       maxLength={120}
                       className="w-full pl-10 pr-4 py-3 rounded-xl bg-neutral-900 border border-white/10 text-white text-xs focus:outline-none focus:border-emerald-500 transition"
-                      placeholder="Alex Vance"
+                      placeholder="Aarav Sharma"
                     />
                   </div>
                 </div>
@@ -496,7 +509,11 @@ export const AuthView: React.FC = () => {
                   type="button"
                   onClick={handleGoogleSignIn}
                   disabled={googleLoading || loading}
-                  className="w-full py-3 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-white/10 text-neutral-200 font-bold text-xs flex items-center justify-center gap-2.5 transition disabled:opacity-50"
+                  className={`w-full py-3 rounded-xl border font-bold text-xs flex items-center justify-center gap-2.5 transition disabled:opacity-50 ${
+                    isProviderDisabledError
+                      ? 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-400 text-white ring-2 ring-emerald-400/50 shadow-lg shadow-emerald-500/20'
+                      : 'bg-neutral-900 hover:bg-neutral-800 border-white/10 text-neutral-200'
+                  }`}
                 >
                   <svg className="w-4 h-4" viewBox="0 0 24 24">
                     <path
@@ -642,7 +659,7 @@ export const AuthView: React.FC = () => {
 
         <div className="mt-6 pt-4 border-t border-white/10 flex items-center justify-center gap-2 text-[11px] text-neutral-400">
           <ShieldCheck className="w-4 h-4 text-emerald-400" />
-          <span>Firebase Auth • Cloud Firestore Encrypted</span>
+          <span>Firebase Auth • Cloud Firestore Protected</span>
         </div>
       </div>
     </div>

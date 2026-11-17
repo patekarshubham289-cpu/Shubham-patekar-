@@ -51,7 +51,7 @@
     },
     "Doctor": {
       "title": "Doctor",
-      "description": "Verified medical specialist profile managed by administrators",
+      "description": "Medical specialist directory profile managed by administrators, distinguishing demo profiles from verified clinicians",
       "type": "object",
       "properties": {
         "name": { "type": "string", "minLength": 2, "maxLength": 120 },
@@ -70,6 +70,9 @@
         "bio": { "type": "string", "maxLength": 1000 },
         "languages": { "type": "array" },
         "verified": { "type": "boolean" },
+        "isDemo": { "type": "boolean" },
+        "verificationStatus": { "type": "string", "enum": ["demo", "pending", "verified"] },
+        "licenseNumber": { "type": "string", "maxLength": 80 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
@@ -96,6 +99,22 @@
       },
       "required": ["userId", "doctorId", "doctorName", "doctorSpecialty", "date", "timeSlot", "type", "status", "createdAt", "updatedAt"]
     },
+    "DoctorSlotLock": {
+      "title": "DoctorSlotLock",
+      "description": "Non-PII doctor appointment slot reservation preventing concurrent double-bookings",
+      "type": "object",
+      "properties": {
+        "doctorId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "date": { "type": "string", "minLength": 4, "maxLength": 32 },
+        "timeSlot": { "type": "string", "minLength": 2, "maxLength": 32 },
+        "bookedByUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "appointmentId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["doctorId", "date", "timeSlot", "bookedByUid", "appointmentId", "active", "createdAt", "updatedAt"]
+    },
     "MedicineReminder": {
       "title": "MedicineReminder",
       "description": "Patient medication schedule and adherence state",
@@ -109,6 +128,9 @@
         "instructions": { "type": "string", "enum": ["Before Food", "After Food", "With Water"] },
         "pillsLeft": { "type": "integer" },
         "takenToday": { "type": "boolean" },
+        "lastTakenDate": { "type": "string", "maxLength": 32 },
+        "completedDates": { "type": "array" },
+        "missedDates": { "type": "array" },
         "active": { "type": "boolean" },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
@@ -124,6 +146,7 @@
         "timestamp": { "type": "string", "format": "date-time", "maxLength": 64 },
         "name": { "type": "string", "minLength": 1, "maxLength": 160 },
         "composition": { "type": "string", "maxLength": 500 },
+        "expiryDate": { "type": "string", "maxLength": 160 },
         "uses": { "type": "array" },
         "benefits": { "type": "array" },
         "sideEffects": { "type": "array" },
@@ -187,22 +210,24 @@
     },
     "EmergencyEvent": {
       "title": "EmergencyEvent",
-      "description": "Emergency SOS dispatch record owned by patient and auditable by admins",
+      "description": "Truthful emergency SOS request & contact notification audit event",
       "type": "object",
       "properties": {
         "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "patientName": { "type": "string", "maxLength": 120 },
         "sosId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
         "userLocation": { "type": "string", "maxLength": 240 },
-        "status": { "type": "string", "enum": ["DISPATCHED", "EN_ROUTE", "RESOLVED", "CANCELLED"] },
-        "ambulanceEtaMinutes": { "type": "integer" },
-        "dispatchedUnit": { "type": "string", "maxLength": 120 },
+        "gpsAvailable": { "type": "boolean" },
+        "coordinates": { "type": "object" },
+        "status": { "type": "string", "enum": ["REQUESTED", "CONTACTS_NOTIFIED", "ACKNOWLEDGED", "RESOLVED", "CANCELLED"] },
+        "responseStatus": { "type": "string", "maxLength": 240 },
+        "notificationAttempts": { "type": "array" },
         "notifiedContactsCount": { "type": "integer" },
         "note": { "type": "string", "maxLength": 500 },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       },
-      "required": ["userId", "sosId", "userLocation", "status", "ambulanceEtaMinutes", "dispatchedUnit", "notifiedContactsCount", "createdAt", "updatedAt"]
+      "required": ["userId", "sosId", "userLocation", "gpsAvailable", "status", "responseStatus", "notifiedContactsCount", "createdAt", "updatedAt"]
     },
     "AdminUser": {
       "title": "AdminUser",
@@ -214,6 +239,21 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "email", "createdAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable administrative audit trail entry",
+      "type": "object",
+      "properties": {
+        "actorUid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "actorEmail": { "type": "string", "format": "email", "maxLength": 254 },
+        "action": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "targetType": { "type": "string", "enum": ["doctor", "appointment", "user", "emergency", "system"] },
+        "targetId": { "type": "string", "maxLength": 128 },
+        "details": { "type": "string", "minLength": 1, "maxLength": 1000 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["actorUid", "actorEmail", "action", "targetType", "details", "createdAt"]
     }
   },
   "firestore": {
@@ -227,11 +267,15 @@
     },
     "/doctors/{doctorId}": {
       "schema": { "$ref": "#/entities/Doctor" },
-      "description": "Verified doctor directory readable by signed-in users and managed by admins"
+      "description": "Specialist directory (verified & demo-flagged profiles) readable by signed-in users and managed by admins"
     },
     "/appointments/{appointmentId}": {
       "schema": { "$ref": "#/entities/Appointment" },
       "description": "Patient doctor appointments linked via userId and doctorId"
+    },
+    "/doctor_slots/{slotId}": {
+      "schema": { "$ref": "#/entities/DoctorSlotLock" },
+      "description": "Non-PII appointment slot locks preventing double-booking per doctor/date/time"
     },
     "/medicine_reminders/{reminderId}": {
       "schema": { "$ref": "#/entities/MedicineReminder" },
@@ -255,11 +299,15 @@
     },
     "/emergency_events/{eventId}": {
       "schema": { "$ref": "#/entities/EmergencyEvent" },
-      "description": "Emergency SOS dispatch events scoped by userId and readable by admins"
+      "description": "Emergency SOS events scoped by userId and auditable by admins"
     },
     "/admins/{userId}": {
       "schema": { "$ref": "#/entities/AdminUser" },
       "description": "Trusted admin registry"
+    },
+    "/audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Immutable administrative audit logs readable & creatable by verified admins"
     }
   }
 }

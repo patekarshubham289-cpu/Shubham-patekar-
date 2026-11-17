@@ -1,1 +1,138 @@
 @import "tailwindcss";
+
+@layer base {
+  html.dark {
+    color-scheme: dark;
+  }
+
+  html.light {
+    color-scheme: light;
+  }
+}
+
+/* Smooth Light Mode Canvas Overrides while preserving Luxury Dark (#0D0D0D / #181818) as default */
+html.light body {
+  background-color: #f3f7f5;
+  color: #0f172a;
+}
+
+html.light .bg-\[\#0D0D0D\],
+html.light .bg-\[\#0D0D0D\]\/90,
+html.light .bg-\[\#0D0D0D\]\/95 {
+  background-color: #f3f7f5 !important;
+  color: #0f172a !important;
+}
+
+html.light .bg-\[\#181818\],
+html.light .bg-\[\#181818\]\/90,
+html.light .from-\[\#181818\] {
+  background-color: #ffffff !important;
+  --tw-gradient-from: #ffffff var(--tw-gradient-from-position) !important;
+  --tw-gradient-via: #f0fdf4 var(--tw-gradient-via-position) !important;
+  --tw-gradient-to: #ecfdf5 var(--tw-gradient-to-position) !important;
+  color: #0f172a !important;
+  box-shadow: 0 8px 30px -12px rgba(15, 23, 42, 0.08);
+}
+
+html.light .bg-neutral-900,
+html.light .bg-neutral-900\/80,
+html.light .bg-neutral-900\/70,
+html.light .bg-neutral-900\/60,
+html.light .bg-neutral-900\/50,
+html.light .bg-neutral-900\/40 {
+  background-color: #f1f5f9 !important;
+}
+
+html.light .bg-neutral-950 {
+  background-color: #e2e8f0 !important;
+}
+
+html.light .bg-neutral-800 {
+  background-color: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+html.light .hover\:bg-neutral-800:hover,
+html.light .hover\:bg-neutral-700:hover {
+  background-color: #cbd5e1 !important;
+}
+
+html.light .text-white {
+  color: #0f172a !important;
+}
+
+/* Keep explicit brand CTA buttons crisp white text on saturated backgrounds in light mode */
+html.light .bg-emerald-500,
+html.light .bg-emerald-600,
+html.light .bg-cyan-500,
+html.light .bg-purple-600,
+html.light .bg-purple-500,
+html.light .bg-red-600,
+html.light .bg-red-600\/90,
+html.light .bg-amber-600,
+html.light .bg-gradient-to-r.from-emerald-500 {
+  color: #ffffff !important;
+}
+html.light .bg-emerald-500 *,
+html.light .bg-emerald-600 *,
+html.light .bg-cyan-500 *,
+html.light .bg-purple-600 *,
+html.light .bg-purple-500 *,
+html.light .bg-red-600 *,
+html.light .bg-red-600\/90 *,
+html.light .bg-amber-600 *,
+html.light .bg-gradient-to-r.from-emerald-500 * {
+  color: #ffffff !important;
+}
+
+html.light .text-neutral-200 {
+  color: #1e293b !important;
+}
+
+html.light .text-neutral-300 {
+  color: #334155 !important;
+}
+
+html.light .text-neutral-400 {
+  color: #475569 !important;
+}
+
+html.light .text-neutral-500 {
+  color: #64748b !important;
+}
+
+html.light .border-white\/10,
+html.light .border-white\/5 {
+  border-color: rgba(15, 23, 42, 0.12) !important;
+}
+
+html.light .bg-red-950\/40,
+html.light .bg-red-950\/30,
+html.light .bg-red-950\/50 {
+  background-color: #fef2f2 !important;
+}
+
+html.light .bg-emerald-950\/30,
+html.light .bg-emerald-950\/50 {
+  background-color: #ecfdf5 !important;
+}
+
+html.light .text-emerald-400 {
+  color: #059669 !important;
+}
+
+html.light .text-amber-400 {
+  color: #d97706 !important;
+}
+
+html.light .text-cyan-400 {
+  color: #0891b2 !important;
+}
+
+html.light .text-purple-400 {
+  color: #7c3aed !important;
+}
+
+html.light .text-red-400 {
+  color: #dc2626 !important;
+}

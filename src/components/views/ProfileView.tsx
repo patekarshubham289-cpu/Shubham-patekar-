@@ -1,11 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../../context/AppContext';
-import { Activity, Heart, ShieldAlert, Edit, Plus, Trash2, X } from 'lucide-react';
+import { EmergencyContact } from '../../types';
+import { validatePhone } from '../../lib/validation';
+import {
+  Activity,
+  Heart,
+  ShieldAlert,
+  Edit,
+  Plus,
+  Trash2,
+  X,
+  AlertCircle
+} from 'lucide-react';
+
+const BLOOD_GROUPS = ['Unknown', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
 export const ProfileView: React.FC = () => {
-  const { user, updateProfile, addEmergencyContact, removeEmergencyContact } = useApp();
+  const {
+    user,
+    updateProfile,
+    addEmergencyContact,
+    editEmergencyContact,
+    removeEmergencyContact
+  } = useApp();
+
   const [showEditModal, setShowEditModal] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
+  const [editingContact, setEditingContact] = useState<EmergencyContact | null>(null);
 
   // Profile Edit State
   const [name, setName] = useState(user.name);
@@ -18,18 +39,21 @@ export const ProfileView: React.FC = () => {
   const [allergiesText, setAllergiesText] = useState(user.allergies.join(', '));
   const [conditionsText, setConditionsText] = useState(user.medicalConditions.join(', '));
   const [isDonor, setIsDonor] = useState(user.isDonor);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [savingProfile, setSavingProfile] = useState(false);
 
   // Emergency Contact Form State
   const [contactName, setContactName] = useState('');
   const [contactRelation, setContactRelation] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [contactPrimary, setContactPrimary] = useState(true);
+  const [contactError, setContactError] = useState<string | null>(null);
 
   useEffect(() => {
     if (showEditModal) {
       setName(user.name);
       setPhone(user.phone);
-      setBloodGroup(user.bloodGroup);
+      setBloodGroup(BLOOD_GROUPS.includes(user.bloodGroup) ? user.bloodGroup : 'Unknown');
       setAge(user.age);
       setGender(user.gender);
       setHeight(user.heightCm);
@@ -37,48 +61,101 @@ export const ProfileView: React.FC = () => {
       setAllergiesText(user.allergies.join(', '));
       setConditionsText(user.medicalConditions.join(', '));
       setIsDonor(user.isDonor);
+      setProfileError(null);
     }
   }, [showEditModal, user]);
 
-  const handleSaveProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const heightM = Number(height) / 100;
-    const computedBmi = heightM > 0 ? Number((Number(weight) / (heightM * heightM)).toFixed(1)) : user.bmi;
-
-    await updateProfile({
-      name,
-      phone,
-      bloodGroup,
-      age: Number(age),
-      gender,
-      heightCm: Number(height),
-      weightKg: Number(weight),
-      bmi: computedBmi,
-      allergies: allergiesText
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean),
-      medicalConditions: conditionsText
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean),
-      isDonor,
-    });
-    setShowEditModal(false);
-  };
-
-  const handleAddContact = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!contactName.trim() || !contactPhone.trim()) return;
-    await addEmergencyContact({
-      name: contactName.trim(),
-      relation: contactRelation.trim() || 'Family',
-      phone: contactPhone.trim(),
-      isPrimary: contactPrimary,
-    });
+  const openAddContactModal = () => {
+    setEditingContact(null);
     setContactName('');
     setContactRelation('');
     setContactPhone('');
+    setContactPrimary(user.emergencyContacts.length === 0);
+    setContactError(null);
+    setShowContactModal(true);
+  };
+
+  const openEditContactModal = (contact: EmergencyContact) => {
+    setEditingContact(contact);
+    setContactName(contact.name);
+    setContactRelation(contact.relation);
+    setContactPhone(contact.phone);
+    setContactPrimary(contact.isPrimary);
+    setContactError(null);
+    setShowContactModal(true);
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfileError(null);
+
+    if (name.trim().length < 2) {
+      setProfileError('Full name must be at least 2 characters.');
+      return;
+    }
+    if (!validatePhone(phone, false)) {
+      setProfileError('Please enter a valid phone number (e.g. +91 98201 12345) or leave it blank.');
+      return;
+    }
+
+    const heightM = Number(height) / 100;
+    const computedBmi = heightM > 0 ? Number((Number(weight) / (heightM * heightM)).toFixed(1)) : user.bmi;
+
+    setSavingProfile(true);
+    try {
+      await updateProfile({
+        name: name.trim(),
+        phone: phone.trim(),
+        bloodGroup,
+        age: Number(age),
+        gender,
+        heightCm: Number(height),
+        weightKg: Number(weight),
+        bmi: computedBmi,
+        allergies: allergiesText
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+        medicalConditions: conditionsText
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+        isDonor,
+      });
+      setShowEditModal(false);
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleSaveContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setContactError(null);
+
+    if (contactName.trim().length < 2) {
+      setContactError('Contact name is required.');
+      return;
+    }
+    if (!validatePhone(contactPhone, true)) {
+      setContactError('Please enter a valid emergency phone number.');
+      return;
+    }
+
+    if (editingContact) {
+      await editEmergencyContact(editingContact.id, {
+        name: contactName.trim(),
+        relation: contactRelation.trim() || 'Family',
+        phone: contactPhone.trim(),
+        isPrimary: contactPrimary,
+      });
+    } else {
+      await addEmergencyContact({
+        name: contactName.trim(),
+        relation: contactRelation.trim() || 'Family',
+        phone: contactPhone.trim(),
+        isPrimary: contactPrimary,
+      });
+    }
     setShowContactModal(false);
   };
 
@@ -120,7 +197,7 @@ export const ProfileView: React.FC = () => {
 
             <h1 className="text-2xl font-black text-white">{user.name || 'Patient'}</h1>
             <p className="text-xs text-neutral-300">
-              {user.email} {user.phone ? `• ${user.phone}` : ''}
+              {user.email} {user.phone ? `• ${user.phone}` : '• Phone not set'}
             </p>
             <p className="text-xs text-neutral-400">
               {user.gender} • {user.age} Yrs • Height: {user.heightCm}cm • Weight: {user.weightKg}kg
@@ -167,7 +244,7 @@ export const ProfileView: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="p-5 rounded-3xl bg-[#181818] border border-white/10 space-y-3">
           <h3 className="text-xs font-bold text-red-400 uppercase tracking-wider flex items-center gap-1.5">
-            <ShieldAlert className="w-4 h-4" /> Allergies & Drug Hypersensitivity
+            <ShieldAlert className="w-4 h-4" /> Allergies &amp; Drug Hypersensitivity
           </h3>
           {user.allergies.length === 0 ? (
             <p className="text-xs text-neutral-400">No allergies recorded. Click Edit Passport to add.</p>
@@ -202,13 +279,18 @@ export const ProfileView: React.FC = () => {
 
       {/* Emergency Contacts (Firestore collection) */}
       <div className="p-6 rounded-3xl bg-[#181818] border border-white/10 space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="text-xs font-extrabold uppercase tracking-widest text-neutral-400">
-            Designated Emergency Contacts ({user.emergencyContacts.length})
-          </h3>
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <h3 className="text-xs font-extrabold uppercase tracking-widest text-neutral-400">
+              Designated Emergency Contacts ({user.emergencyContacts.length})
+            </h3>
+            <p className="text-[11px] text-neutral-500 mt-0.5">
+              Displayed inside your Medical ID and SOS assistant for instant calling or SMS.
+            </p>
+          </div>
           <button
-            onClick={() => setShowContactModal(true)}
-            className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 font-bold text-xs flex items-center gap-1 transition"
+            onClick={openAddContactModal}
+            className="px-3 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 font-bold text-xs flex items-center gap-1 transition shrink-0"
           >
             <Plus className="w-3.5 h-3.5" /> Add Contact
           </button>
@@ -216,14 +298,14 @@ export const ProfileView: React.FC = () => {
 
         {user.emergencyContacts.length === 0 ? (
           <p className="text-xs text-neutral-400 py-3">
-            No emergency contacts added yet. Add a primary contact for SOS alerts.
+            No emergency contacts added yet. Add a primary contact for quick SOS calling/SMS.
           </p>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {user.emergencyContacts.map((contact) => (
               <div key={contact.id} className="p-4 rounded-2xl bg-neutral-900 border border-white/5 flex items-center justify-between gap-2">
-                <div>
-                  <p className="text-xs font-bold text-white">
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-white truncate">
                     {contact.name}{' '}
                     {contact.isPrimary && (
                       <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 ml-1">
@@ -235,17 +317,26 @@ export const ProfileView: React.FC = () => {
                     {contact.relation} • {contact.phone}
                   </p>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 shrink-0">
                   <a
                     href={`tel:${contact.phone}`}
-                    className="px-3 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 font-bold text-xs"
+                    className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 text-emerald-400 font-bold text-xs"
                   >
                     Call
                   </a>
                   <button
+                    onClick={() => openEditContactModal(contact)}
+                    className="p-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition"
+                    title="Edit contact"
+                    aria-label={`Edit ${contact.name}`}
+                  >
+                    <Edit className="w-3.5 h-3.5" />
+                  </button>
+                  <button
                     onClick={() => removeEmergencyContact(contact.id)}
                     className="p-1.5 rounded-xl bg-neutral-800 hover:bg-red-950/60 text-neutral-400 hover:text-red-400 transition"
                     title="Remove contact"
+                    aria-label={`Remove ${contact.name}`}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -263,13 +354,31 @@ export const ProfileView: React.FC = () => {
             <button
               onClick={() => setShowEditModal(false)}
               className="absolute top-4 right-4 p-2 rounded-full bg-neutral-800 text-neutral-400 hover:text-white"
+              aria-label="Close modal"
             >
               <X className="w-5 h-5" />
             </button>
 
             <h3 className="text-xl font-black text-white">Edit Health Passport</h3>
 
+            {profileError && (
+              <div className="p-3 rounded-xl bg-red-950/50 border border-red-500/40 text-red-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+                <span>{profileError}</span>
+              </div>
+            )}
+
             <form onSubmit={handleSaveProfile} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-neutral-400 font-semibold mb-1">Account Email (Verified)</label>
+                <input
+                  type="email"
+                  value={user.email}
+                  disabled
+                  className="w-full p-3 rounded-xl bg-neutral-900/50 border border-white/5 text-neutral-400 cursor-not-allowed"
+                />
+              </div>
+
               <div>
                 <label className="block text-neutral-400 font-semibold mb-1">Full Name</label>
                 <input
@@ -286,9 +395,10 @@ export const ProfileView: React.FC = () => {
                 <div>
                   <label className="block text-neutral-400 font-semibold mb-1">Phone Number</label>
                   <input
-                    type="text"
+                    type="tel"
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+91 98201 12345"
                     maxLength={32}
                     className="w-full p-3 rounded-xl bg-neutral-900 border border-white/10 text-white"
                   />
@@ -310,14 +420,17 @@ export const ProfileView: React.FC = () => {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-neutral-400 font-semibold mb-1">Blood Group</label>
-                  <input
-                    type="text"
+                  <select
                     value={bloodGroup}
                     onChange={(e) => setBloodGroup(e.target.value)}
-                    maxLength={10}
-                    required
                     className="w-full p-3 rounded-xl bg-neutral-900 border border-white/10 text-white"
-                  />
+                  >
+                    {BLOOD_GROUPS.map((bg) => (
+                      <option key={bg} value={bg}>
+                        {bg}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
@@ -381,7 +494,7 @@ export const ProfileView: React.FC = () => {
                   type="text"
                   value={conditionsText}
                   onChange={(e) => setConditionsText(e.target.value)}
-                  placeholder="e.g. Mild Asthma, Seasonal Allergies"
+                  placeholder="e.g. Mild Asthma, Hypertension"
                   className="w-full p-3 rounded-xl bg-neutral-900 border border-white/10 text-white"
                 />
               </div>
@@ -398,29 +511,40 @@ export const ProfileView: React.FC = () => {
 
               <button
                 type="submit"
-                className="w-full py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-extrabold text-xs shadow-lg transition mt-2"
+                disabled={savingProfile}
+                className="w-full py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-extrabold text-xs shadow-lg transition mt-2 disabled:opacity-50"
               >
-                Save Changes to Firestore
+                {savingProfile ? 'Saving...' : 'Save Changes to Firestore'}
               </button>
             </form>
           </div>
         </div>
       )}
 
-      {/* Add Emergency Contact Modal */}
+      {/* Add / Edit Emergency Contact Modal */}
       {showContactModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
           <div className="w-full max-w-md bg-[#181818] border border-emerald-500/30 rounded-3xl p-6 shadow-2xl relative text-white space-y-4">
             <button
               onClick={() => setShowContactModal(false)}
               className="absolute top-4 right-4 p-2 rounded-full bg-neutral-800 text-neutral-400 hover:text-white"
+              aria-label="Close modal"
             >
               <X className="w-5 h-5" />
             </button>
 
-            <h3 className="text-xl font-black text-white">Add Emergency Contact</h3>
+            <h3 className="text-xl font-black text-white">
+              {editingContact ? 'Edit Emergency Contact' : 'Add Emergency Contact'}
+            </h3>
 
-            <form onSubmit={handleAddContact} className="space-y-3 text-xs">
+            {contactError && (
+              <div className="p-3 rounded-xl bg-red-950/50 border border-red-500/40 text-red-300 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-400" />
+                <span>{contactError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveContact} className="space-y-3 text-xs">
               <div>
                 <label className="block text-neutral-400 font-semibold mb-1">Contact Name</label>
                 <input
@@ -429,7 +553,7 @@ export const ProfileView: React.FC = () => {
                   onChange={(e) => setContactName(e.target.value)}
                   maxLength={120}
                   required
-                  placeholder="Sarah Vance"
+                  placeholder="Priya Sharma"
                   className="w-full p-3 rounded-xl bg-neutral-900 border border-white/10 text-white"
                 />
               </div>
@@ -453,7 +577,7 @@ export const ProfileView: React.FC = () => {
                   onChange={(e) => setContactPhone(e.target.value)}
                   maxLength={32}
                   required
-                  placeholder="+1 (555) 987-6543"
+                  placeholder="+91 98111 65432"
                   className="w-full p-3 rounded-xl bg-neutral-900 border border-white/10 text-white"
                 />
               </div>
@@ -471,7 +595,7 @@ export const ProfileView: React.FC = () => {
                 type="submit"
                 className="w-full py-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white font-extrabold text-xs shadow-lg transition mt-2"
               >
-                Save Emergency Contact
+                {editingContact ? 'Update Emergency Contact' : 'Save Emergency Contact'}
               </button>
             </form>
           </div>

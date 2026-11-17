@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { AppProvider, useApp } from './context/AppContext';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { Header } from './components/common/Header';
@@ -34,7 +34,7 @@ const AuthLoadingScreen: React.FC = () => (
         </h1>
         <p className="text-xs text-neutral-400 mt-1 flex items-center justify-center gap-1.5">
           <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-          Restoring encrypted session...
+          Restoring authenticated session...
         </p>
       </div>
     </div>
@@ -43,14 +43,44 @@ const AuthLoadingScreen: React.FC = () => (
 
 const MainContent: React.FC = () => {
   const { authLoading, dataLoading, isAuthenticated, isEmailVerified, isAdmin, activeTab } = useApp();
+  const [gmpQuotaExceeded, setGmpQuotaExceeded] = useState(false);
+
+  useEffect(() => {
+    const handleQuota = () => setGmpQuotaExceeded(true);
+    window.addEventListener('gmp-quota-exceeded', handleQuota);
+    return () => window.removeEventListener('gmp-quota-exceeded', handleQuota);
+  }, []);
+
+  const quotaBanner = gmpQuotaExceeded ? (
+    <div className="bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2.5 text-xs md:text-sm text-center sticky top-0 z-50 shadow-sm">
+      <span>
+        Google Maps Platform quota reached. If you are the app owner, visit{' '}
+        <a
+          href="https://developers.google.com/maps/ai/ai-studio?utm_campaign=gmp_mcp_codeassist_v1_aistudio#quota_exceeded_errors"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="underline font-semibold text-amber-950 hover:text-amber-800"
+        >
+          maps developer site
+        </a>{' '}
+        for instructions to update your account.
+      </span>
+    </div>
+  ) : null;
 
   if (authLoading) {
-    return <AuthLoadingScreen />;
+    return (
+      <>
+        {quotaBanner}
+        <AuthLoadingScreen />
+      </>
+    );
   }
 
   if (!isAuthenticated || !isEmailVerified) {
     return (
       <>
+        {quotaBanner}
         <AuthView />
         <Toast />
       </>
@@ -85,7 +115,8 @@ const MainContent: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#0D0D0D] text-white selection:bg-emerald-500 selection:text-white font-sans antialiased">
+    <div className="min-h-screen bg-[#0D0D0D] text-white selection:bg-emerald-500 selection:text-white font-sans antialiased transition-colors duration-300">
+      {quotaBanner}
       <Header />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
         {dataLoading && (

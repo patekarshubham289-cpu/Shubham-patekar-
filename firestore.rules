@@ -47,7 +47,9 @@ service cloud.firestore {
       return isEmailVerified() && (
         request.auth.token.admin == true ||
         exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
-        request.auth.token.email == 'patekarshubham07@gmail.com'
+        ('email' in request.auth.token &&
+          request.auth.token.email is string &&
+          request.auth.token.email.lower() == 'patekarshubham07@gmail.com')
       );
     }
 
@@ -140,14 +142,18 @@ service cloud.firestore {
         data.keys().hasOnly([
           'name', 'title', 'specialty', 'experienceYears', 'rating', 'reviewCount',
           'feeUsd', 'photo', 'address', 'lat', 'lng', 'hospital',
-          'availableSlots', 'bio', 'languages', 'verified', 'createdAt', 'updatedAt'
+          'availableSlots', 'bio', 'languages', 'verified', 'isDemo',
+          'verificationStatus', 'licenseNumber', 'createdAt', 'updatedAt'
         ]) &&
         isValidString(data.name, 2, 120) &&
         isValidString(data.title, 2, 120) &&
         isValidString(data.specialty, 2, 80) &&
-        data.feeUsd is number && data.feeUsd >= 0 && data.feeUsd <= 10000 &&
+        data.feeUsd is number && data.feeUsd >= 0 && data.feeUsd <= 50000 &&
         isValidString(data.hospital, 2, 160) &&
         data.verified is bool &&
+        (!('isDemo' in data) || data.isDemo is bool) &&
+        (!('verificationStatus' in data) || data.verificationStatus in ['demo', 'pending', 'verified']) &&
+        (!('licenseNumber' in data) || isValidString(data.licenseNumber, 0, 80)) &&
         (!('experienceYears' in data) || (data.experienceYears is int && data.experienceYears >= 0 && data.experienceYears <= 80)) &&
         (!('rating' in data) || (data.rating is number && data.rating >= 0 && data.rating <= 5)) &&
         (!('reviewCount' in data) || (data.reviewCount is int && data.reviewCount >= 0)) &&
@@ -187,6 +193,23 @@ service cloud.firestore {
         data.updatedAt is timestamp;
     }
 
+    function isValidDoctorSlotLock(data) {
+      return data.keys().hasAll([
+          'doctorId', 'date', 'timeSlot', 'bookedByUid', 'appointmentId', 'active', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'doctorId', 'date', 'timeSlot', 'bookedByUid', 'appointmentId', 'active', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.doctorId) &&
+        isValidString(data.date, 4, 32) &&
+        isValidString(data.timeSlot, 2, 32) &&
+        isValidId(data.bookedByUid) &&
+        isValidId(data.appointmentId) &&
+        data.active is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
     function isValidMedicineReminder(data) {
       return data.keys().hasAll([
           'userId', 'name', 'dosage', 'frequency', 'timeSlots',
@@ -194,7 +217,8 @@ service cloud.firestore {
         ]) &&
         data.keys().hasOnly([
           'userId', 'name', 'dosage', 'frequency', 'timeSlots',
-          'instructions', 'pillsLeft', 'takenToday', 'active', 'createdAt', 'updatedAt'
+          'instructions', 'pillsLeft', 'takenToday', 'lastTakenDate',
+          'completedDates', 'missedDates', 'active', 'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.userId) &&
         isValidString(data.name, 1, 160) &&
@@ -204,6 +228,9 @@ service cloud.firestore {
         data.instructions in ['Before Food', 'After Food', 'With Water'] &&
         data.pillsLeft is int && data.pillsLeft >= 0 && data.pillsLeft <= 5000 &&
         data.takenToday is bool &&
+        (!('lastTakenDate' in data) || isValidString(data.lastTakenDate, 0, 32)) &&
+        (!('completedDates' in data) || isValidStringList(data.completedDates, 90, 32)) &&
+        (!('missedDates' in data) || isValidStringList(data.missedDates, 90, 32)) &&
         data.active is bool &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
@@ -214,7 +241,7 @@ service cloud.firestore {
           'userId', 'timestamp', 'name', 'composition', 'dosage', 'saved', 'createdAt', 'updatedAt'
         ]) &&
         data.keys().hasOnly([
-          'userId', 'timestamp', 'name', 'composition', 'uses', 'benefits',
+          'userId', 'timestamp', 'name', 'composition', 'expiryDate', 'uses', 'benefits',
           'sideEffects', 'dosage', 'warnings', 'storage', 'alternativeMedicines',
           'priceRange', 'disclaimer', 'saved', 'createdAt', 'updatedAt'
         ]) &&
@@ -222,6 +249,7 @@ service cloud.firestore {
         isValidString(data.timestamp, 10, 64) &&
         isValidString(data.name, 1, 160) &&
         isValidString(data.composition, 0, 500) &&
+        (!('expiryDate' in data) || isValidString(data.expiryDate, 0, 160)) &&
         isValidString(data.dosage, 0, 500) &&
         data.saved is bool &&
         (!('uses' in data) || isValidStringList(data.uses, 20, 200)) &&
@@ -278,24 +306,52 @@ service cloud.firestore {
 
     function isValidEmergencyEvent(data) {
       return data.keys().hasAll([
-          'userId', 'sosId', 'userLocation', 'status', 'ambulanceEtaMinutes',
-          'dispatchedUnit', 'notifiedContactsCount', 'createdAt', 'updatedAt'
+          'userId', 'sosId', 'userLocation', 'gpsAvailable', 'status',
+          'responseStatus', 'notifiedContactsCount', 'createdAt', 'updatedAt'
         ]) &&
         data.keys().hasOnly([
-          'userId', 'patientName', 'sosId', 'userLocation', 'status', 'ambulanceEtaMinutes',
-          'dispatchedUnit', 'notifiedContactsCount', 'note', 'createdAt', 'updatedAt'
+          'userId', 'patientName', 'sosId', 'userLocation', 'gpsAvailable', 'coordinates',
+          'status', 'responseStatus', 'notificationAttempts', 'notifiedContactsCount',
+          'note', 'createdAt', 'updatedAt'
         ]) &&
         isValidId(data.userId) &&
         isValidId(data.sosId) &&
         (!('patientName' in data) || isValidString(data.patientName, 0, 120)) &&
         isValidString(data.userLocation, 1, 240) &&
-        data.status in ['DISPATCHED', 'EN_ROUTE', 'RESOLVED', 'CANCELLED'] &&
-        data.ambulanceEtaMinutes is int && data.ambulanceEtaMinutes >= 0 && data.ambulanceEtaMinutes <= 240 &&
-        isValidString(data.dispatchedUnit, 1, 120) &&
+        data.gpsAvailable is bool &&
+        (!('coordinates' in data) || (
+          data.coordinates is map &&
+          data.coordinates.keys().hasOnly(['lat', 'lng']) &&
+          data.coordinates.lat is number && data.coordinates.lat >= -90 && data.coordinates.lat <= 90 &&
+          data.coordinates.lng is number && data.coordinates.lng >= -180 && data.coordinates.lng <= 180
+        )) &&
+        data.status in ['REQUESTED', 'CONTACTS_NOTIFIED', 'ACKNOWLEDGED', 'RESOLVED', 'CANCELLED'] &&
+        isValidString(data.responseStatus, 1, 240) &&
+        (!('notificationAttempts' in data) || isValidStringList(data.notificationAttempts, 20, 240)) &&
         data.notifiedContactsCount is int && data.notifiedContactsCount >= 0 && data.notifiedContactsCount <= 50 &&
         (!('note' in data) || isValidString(data.note, 0, 500)) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
+    }
+
+    function isValidAuditLog(data) {
+      return data.keys().hasAll(['actorUid', 'actorEmail', 'action', 'targetType', 'details', 'createdAt']) &&
+        data.keys().hasOnly(['actorUid', 'actorEmail', 'action', 'targetType', 'targetId', 'details', 'createdAt']) &&
+        isValidId(data.actorUid) &&
+        isValidString(data.actorEmail, 3, 254) &&
+        isValidString(data.action, 2, 120) &&
+        data.targetType in ['doctor', 'appointment', 'user', 'emergency', 'system'] &&
+        (!('targetId' in data) || isValidString(data.targetId, 0, 128)) &&
+        isValidString(data.details, 1, 1000) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidAdminUser(data) {
+      return data.keys().hasAll(['userId', 'email', 'createdAt']) &&
+        data.keys().hasOnly(['userId', 'email', 'createdAt']) &&
+        isValidId(data.userId) &&
+        isValidString(data.email, 3, 254) &&
+        data.createdAt is timestamp;
     }
 
     // =========================================================================
@@ -305,7 +361,28 @@ service cloud.firestore {
     match /admins/{userId} {
       allow get: if isValidId(userId) && (isVerifiedOwner(userId) || isAdmin());
       allow list: if isAdmin();
-      allow create, update, delete: if isAdmin() && isValidId(userId);
+      allow create: if isValidId(userId) &&
+        isAdmin() &&
+        isValidAdminUser(incoming()) &&
+        incoming().userId == userId &&
+        incoming().createdAt == request.time;
+      allow update: if isValidId(userId) &&
+        isAdmin() &&
+        isValidAdminUser(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt;
+      allow delete: if isAdmin() && isValidId(userId);
+    }
+
+    match /audit_logs/{logId} {
+      allow get: if isValidId(logId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(logId) &&
+        isAdmin() &&
+        isValidAuditLog(incoming()) &&
+        incoming().actorUid == request.auth.uid &&
+        incoming().createdAt == request.time;
+      allow update, delete: if false;
     }
 
     match /profiles/{userId} {
@@ -365,7 +442,7 @@ service cloud.firestore {
 
     match /doctors/{doctorId} {
       allow get: if isValidId(doctorId) && isEmailVerified();
-      allow list: if isEmailVerified() && (resource.data.verified == true || isAdmin());
+      allow list: if isEmailVerified() && (resource.data.verified == true || resource.data.isDemo == true || isAdmin());
       allow create: if isValidId(doctorId) &&
         isAdmin() &&
         isValidDoctor(incoming()) &&
@@ -377,6 +454,21 @@ service cloud.firestore {
         incoming().createdAt == existing().createdAt &&
         incoming().updatedAt == request.time;
       allow delete: if isValidId(doctorId) && isAdmin();
+    }
+
+    match /doctor_slots/{slotId} {
+      allow get: if isValidId(slotId) && isEmailVerified();
+      allow list: if isEmailVerified() && (resource.data.active == true || resource.data.bookedByUid == request.auth.uid || isAdmin());
+      allow create: if isValidId(slotId) &&
+        isEmailVerified() &&
+        isValidDoctorSlotLock(incoming()) &&
+        incoming().bookedByUid == request.auth.uid &&
+        incoming().active == true &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        exists(/databases/$(database)/documents/doctors/$(incoming().doctorId));
+      allow update: if isValidId(slotId) && isAdmin();
+      allow delete: if isValidId(slotId) && isEmailVerified() && (existing().bookedByUid == request.auth.uid || isAdmin());
     }
 
     match /appointments/{appointmentId} {
@@ -426,7 +518,8 @@ service cloud.firestore {
             existing().userId == request.auth.uid &&
             incoming().diff(existing()).affectedKeys().hasOnly([
               'name', 'dosage', 'frequency', 'timeSlots', 'instructions',
-              'pillsLeft', 'takenToday', 'active', 'updatedAt'
+              'pillsLeft', 'takenToday', 'lastTakenDate', 'completedDates',
+              'missedDates', 'active', 'updatedAt'
             ])
           )
         );
@@ -522,7 +615,7 @@ service cloud.firestore {
         isEmailVerified() &&
         isValidEmergencyEvent(incoming()) &&
         incoming().userId == request.auth.uid &&
-        incoming().status == 'DISPATCHED' &&
+        incoming().status in ['REQUESTED', 'CONTACTS_NOTIFIED'] &&
         incoming().createdAt == request.time &&
         incoming().updatedAt == request.time;
       allow update: if isValidId(eventId) &&
@@ -534,9 +627,9 @@ service cloud.firestore {
         incoming().updatedAt == request.time && (
           isAdmin() || (
             existing().userId == request.auth.uid &&
-            existing().status in ['DISPATCHED', 'EN_ROUTE'] &&
-            incoming().status in ['EN_ROUTE', 'CANCELLED', 'RESOLVED'] &&
-            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'note', 'updatedAt'])
+            existing().status in ['REQUESTED', 'CONTACTS_NOTIFIED', 'ACKNOWLEDGED'] &&
+            incoming().status in ['CONTACTS_NOTIFIED', 'CANCELLED', 'RESOLVED'] &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'responseStatus', 'notificationAttempts', 'note', 'updatedAt'])
           )
         );
       allow delete: if isValidId(eventId) && isAdmin();

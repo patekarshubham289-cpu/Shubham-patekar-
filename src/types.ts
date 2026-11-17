@@ -60,6 +60,7 @@ export interface MedicineScanResult {
   imageUrl?: string;
   name: string;
   composition: string;
+  expiryDate: string;
   uses: string[];
   benefits: string[];
   sideEffects: string[];
@@ -104,6 +105,9 @@ export interface Doctor {
   bio: string;
   languages: string[];
   verified?: boolean;
+  isDemo?: boolean;
+  verificationStatus?: 'demo' | 'pending' | 'verified';
+  licenseNumber?: string;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -125,16 +129,32 @@ export interface Appointment {
   updatedAt?: string;
 }
 
+export interface DoctorSlotLock {
+  id: string;
+  doctorId: string;
+  date: string;
+  timeSlot: string;
+  bookedByUid: string;
+  appointmentId: string;
+  active: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface NearbyPlace {
   id: string;
+  placeId: string;
   name: string;
-  category: 'Hospital' | 'Pharmacy' | 'Blood Bank' | 'Diagnostic' | 'Ambulance';
+  category: 'Hospital' | 'Pharmacy' | 'Clinic' | 'Diagnostic' | 'Blood Bank';
   address: string;
-  distanceKm: number;
-  rating: number;
+  distanceKm: number | null;
+  rating: number | null;
   reviewCount: number;
   phone: string;
-  isOpen24: boolean;
+  openNow: boolean | null;
+  websiteUri?: string;
+  googleMapsUri?: string;
+  directionsUri?: string;
   lat: number;
   lng: number;
 }
@@ -149,6 +169,9 @@ export interface MedicineReminder {
   instructions: 'Before Food' | 'After Food' | 'With Water';
   pillsLeft: number;
   takenToday: boolean;
+  lastTakenDate?: string; // YYYY-MM-DD
+  completedDates?: string[];
+  missedDates?: string[];
   active: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -166,19 +189,39 @@ export interface NotificationItem {
   updatedAt?: string;
 }
 
+export type EmergencyStatus =
+  | 'REQUESTED'
+  | 'CONTACTS_NOTIFIED'
+  | 'ACKNOWLEDGED'
+  | 'RESOLVED'
+  | 'CANCELLED';
+
 export interface EmergencyEvent {
   id: string;
   userId: string;
   patientName?: string;
   sosId: string;
   userLocation: string;
-  status: 'DISPATCHED' | 'EN_ROUTE' | 'RESOLVED' | 'CANCELLED';
-  ambulanceEtaMinutes: number;
-  dispatchedUnit: string;
+  gpsAvailable: boolean;
+  coordinates?: { lat: number; lng: number };
+  status: EmergencyStatus;
+  responseStatus: string;
+  notificationAttempts: string[];
   notifiedContactsCount: number;
   note?: string;
   createdAt: string;
   updatedAt?: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  actorUid: string;
+  actorEmail: string;
+  action: string;
+  targetType: 'doctor' | 'appointment' | 'user' | 'emergency' | 'system';
+  targetId?: string;
+  details: string;
+  createdAt: string;
 }
 
 export interface SystemSettings {

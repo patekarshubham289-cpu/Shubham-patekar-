@@ -12,14 +12,18 @@ import {
   FileText,
   Apple,
   Brain,
-  ShieldCheck
+  ShieldCheck,
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react';
 
 export const AiAssistantView: React.FC = () => {
-  const { chatMessages, addChatMessage, clearChat, user, showToast, getAuthToken } = useApp();
+  const { chatMessages, addChatMessage, clearChat, user, settings, showToast, getAuthToken } = useApp();
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [lastQuery, setLastQuery] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const scrollToBottom = () => {
@@ -28,20 +32,20 @@ export const AiAssistantView: React.FC = () => {
 
   useEffect(() => {
     scrollToBottom();
-  }, [chatMessages, isLoading]);
+  }, [chatMessages, isLoading, apiError]);
 
-  const handleSendMessage = async (textToSend?: string) => {
-    const query = (textToSend ?? inputText).trim();
-    if (!query) return;
-
-    if (!textToSend) setInputText('');
+  const sendToGemini = async (query: string, appendUserMsg = true) => {
+    setApiError(null);
+    setLastQuery(query);
     setIsLoading(true);
 
     try {
-      await addChatMessage({
-        sender: 'user',
-        text: query,
-      });
+      if (appendUserMsg) {
+        await addChatMessage({
+          sender: 'user',
+          text: query,
+        });
+      }
 
       const token = await getAuthToken();
       const res = await fetch('/api/ai/chat', {
@@ -54,12 +58,13 @@ export const AiAssistantView: React.FC = () => {
           message: query,
           history: chatMessages,
           userProfile: user,
+          language: settings.language,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'AI Assistant failed to respond');
+        throw new Error(data.error || 'AI Assistant could not respond right now.');
       }
 
       if (data.reply) {
@@ -67,17 +72,27 @@ export const AiAssistantView: React.FC = () => {
           sender: 'assistant',
           text: data.reply,
         });
+        setLastQuery(null);
       }
     } catch (err: any) {
-      showToast(err?.message || 'Error connecting to AI Assistant', 'error');
+      const msg = err?.message || 'Unable to reach AI service. Please retry.';
+      setApiError(msg);
+      showToast(msg, 'error');
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleSendMessage = async (textToSend?: string) => {
+    const query = (textToSend ?? inputText).trim();
+    if (!query || isLoading) return;
+    if (!textToSend) setInputText('');
+    await sendToGemini(query, true);
+  };
+
   const handleVoiceInput = () => {
     if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
-      showToast('Speech recognition not supported in this browser. Please type your prompt.', 'info');
+      showToast('Speech recognition not supported in this browser. Please type your question.', 'info');
       return;
     }
 
@@ -118,51 +133,66 @@ export const AiAssistantView: React.FC = () => {
     {
       label: 'Symptom Guidance',
       icon: <HeartPulse className="w-3.5 h-3.5 text-red-400" />,
-      text: 'I have a mild headache, tiredness, and slight neck tension. What could be the cause and remedies?',
+      text: 'I have a mild headache, tiredness, and slight neck tension. What general factors could explain this and when should I see a doctor?',
     },
     {
       label: 'Diet Plan',
       icon: <Apple className="w-3.5 h-3.5 text-emerald-400" />,
-      text: 'Recommend a 1-day Mediterranean meal plan suitable for managing blood pressure.',
+      text: 'Recommend a balanced 1-day Mediterranean meal plan suitable for general cardiovascular health.',
     },
     {
-      label: 'Lab Report Explanation',
+      label: 'Lab Report Terms',
       icon: <FileText className="w-3.5 h-3.5 text-amber-400" />,
-      text: 'Explain what Fasting Blood Glucose of 98 mg/dL and HbA1c of 5.4% mean for metabolic health.',
+      text: 'Explain what Fasting Blood Glucose of 98 mg/dL and HbA1c of 5.4% generally represent.',
     },
     {
-      label: 'Mental Wellness',
+      label: 'Stress Relief',
       icon: <Brain className="w-3.5 h-3.5 text-cyan-400" />,
-      text: 'Provide 3 quick diaphragmatic breathing techniques to manage stress.',
+      text: 'Provide 3 evidence-based diaphragmatic breathing techniques to manage everyday stress.',
     },
   ];
 
   return (
     <div className="space-y-4 pb-24 text-white">
       {/* Header */}
-      <div className="p-6 rounded-3xl bg-gradient-to-br from-[#181818] via-[#201d12] to-[#181818] border border-amber-500/30 flex items-center justify-between shadow-2xl">
-        <div className="flex items-center gap-3">
-          <div className="p-3 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
-            <Bot className="w-7 h-7" />
+      <div className="p-6 rounded-3xl bg-gradient-to-br from-[#181818] via-[#201d12] to-[#181818] border border-amber-500/30 space-y-3 shadow-2xl">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-3 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+              <Bot className="w-7 h-7" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-extrabold uppercase tracking-widest text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded border border-amber-500/30">
+                  GEMINI HEALTH INFORMATION AI
+                </span>
+                <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/30">
+                  Language: {settings.language}
+                </span>
+              </div>
+              <h1 className="text-2xl font-black text-white">AI Medical Assistant</h1>
+              <p className="text-xs text-neutral-300">
+                24/7 Health Q&amp;A, Symptom Education &amp; Wellness Guidance
+              </p>
+            </div>
           </div>
-          <div>
-            <span className="text-[10px] font-extrabold uppercase tracking-widest text-amber-400 bg-amber-500/10 px-2.5 py-0.5 rounded border border-amber-500/30">
-              GEMINI CLINICAL AI
-            </span>
-            <h1 className="text-2xl font-black text-white">AI Health Companion</h1>
-            <p className="text-xs text-neutral-300">
-              24/7 Medical Q&A, Symptom Triage, Diet & Lab Report Insights
-            </p>
-          </div>
+
+          <button
+            onClick={clearChat}
+            className="p-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-white/10 transition"
+            title="Clear Conversation"
+            aria-label="Clear Conversation"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
         </div>
 
-        <button
-          onClick={clearChat}
-          className="p-2.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 text-neutral-400 hover:text-white border border-white/10 transition"
-          title="Clear Conversation"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
+        <div className="p-3 rounded-2xl bg-amber-950/30 border border-amber-500/30 text-[11px] text-amber-200 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+          <span>
+            <strong>Clinical Disclaimer:</strong> This AI assistant provides general educational health information and <strong>does not replace a registered medical professional</strong>. For urgent or severe symptoms, dial 112 / 108 / 911 immediately.
+          </span>
+        </div>
       </div>
 
       {/* Quick Prompts Bar */}
@@ -180,15 +210,15 @@ export const AiAssistantView: React.FC = () => {
       </div>
 
       {/* Chat Conversation Box */}
-      <div className="p-6 rounded-3xl bg-[#181818] border border-white/10 min-h-[420px] max-h-[550px] overflow-y-auto space-y-4 shadow-2xl">
+      <div className="p-6 rounded-3xl bg-[#181818] border border-white/10 min-h-[400px] max-h-[540px] overflow-y-auto space-y-4 shadow-2xl">
         {chatMessages.length === 0 ? (
-          <div className="text-center py-16 space-y-2">
+          <div className="text-center py-14 space-y-2">
             <Bot className="w-10 h-10 text-amber-400 mx-auto" />
             <p className="text-sm font-bold text-white">
-              Hello {user.name || 'Patient'}! Ask your HealthCare+ AI Companion anything.
+              Hello {user.name || 'Patient'}! Ask your HealthCare+ AI Companion a health question.
             </p>
             <p className="text-xs text-neutral-400 max-w-md mx-auto">
-              Your encrypted conversation history is synced to Cloud Firestore. Select a quick prompt above or type a question below.
+              Your conversation history is saved in your protected Cloud Firestore vault. Select a quick prompt above or type a question below.
             </p>
           </div>
         ) : (
@@ -237,7 +267,24 @@ export const AiAssistantView: React.FC = () => {
         {isLoading && (
           <div className="flex items-center gap-3 text-xs text-amber-400 font-semibold p-3 bg-neutral-900 rounded-xl w-fit border border-amber-500/20">
             <Sparkles className="w-4 h-4 animate-spin" />
-            <span>Gemini AI formulating clinical guidance...</span>
+            <span>Gemini AI formulating educational guidance...</span>
+          </div>
+        )}
+
+        {apiError && (
+          <div className="p-3.5 rounded-2xl bg-red-950/40 border border-red-500/40 text-xs text-red-200 flex items-center justify-between gap-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+              <span>{apiError}</span>
+            </div>
+            {lastQuery && (
+              <button
+                onClick={() => sendToGemini(lastQuery, false)}
+                className="px-3 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold flex items-center gap-1 shrink-0"
+              >
+                <RefreshCw className="w-3.5 h-3.5" /> Retry
+              </button>
+            )}
           </div>
         )}
 
@@ -254,6 +301,7 @@ export const AiAssistantView: React.FC = () => {
               : 'bg-neutral-900 hover:bg-neutral-800 text-amber-400 border-white/10'
           }`}
           title="Voice Input"
+          aria-label="Voice Input"
         >
           <Mic className="w-4 h-4" />
         </button>
@@ -263,13 +311,14 @@ export const AiAssistantView: React.FC = () => {
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-          placeholder="Ask medical questions, diet advice, or symptom triage..."
+          placeholder="Ask medical questions, diet advice, or general lab explanations..."
           className="flex-1 bg-transparent px-2 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none"
         />
 
         <button
           onClick={() => handleSendMessage()}
           disabled={!inputText.trim() || isLoading}
+          aria-label="Send message"
           className="p-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white font-bold text-xs shadow-md transition disabled:opacity-50"
         >
           <Send className="w-4 h-4" />
@@ -278,7 +327,7 @@ export const AiAssistantView: React.FC = () => {
 
       <div className="flex items-center justify-center gap-2 text-[10px] text-neutral-500">
         <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-        <span>AI Medical Guidance for Educational Reference • Emergency Call 911</span>
+        <span>AI Guidance Does Not Replace a Registered Physician • Emergency Call 112 / 108 / 911</span>
       </div>
     </div>
   );

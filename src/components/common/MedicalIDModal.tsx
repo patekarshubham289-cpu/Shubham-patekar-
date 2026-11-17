@@ -171,7 +171,7 @@ export const MedicalIDModal: React.FC = () => {
 
         <div className="mt-4 text-center">
           <p className="text-[10px] text-neutral-500">
-            HealthCare+ Encrypted Digital Health Passport • Verified by Firebase Auth
+            HealthCare+ Digital Health Passport • Protected by Firebase Auth & User-Scoped Firestore Rules
           </p>
         </div>
       </div>

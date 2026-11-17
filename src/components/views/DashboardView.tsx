@@ -28,39 +28,24 @@ export const DashboardView: React.FC = () => {
     toggleReminderTaken,
     appointments,
     openSosModal,
-    addVitalLog
+    editVitalLog,
+    showToast
   } = useApp();
 
-  const handleQuickWaterAdd = () => {
-    const base = latestVital || {
-      heartRate: 72,
-      bloodPressureSys: 120,
-      bloodPressureDia: 80,
-      bloodSugar: 95,
-      bmi: user.bmi || 22.5,
-      weightKg: user.weightKg || 70,
-      temperatureC: 36.6,
-      spO2: 98,
-      waterIntakeMl: 0,
-      sleepHours: 7.5,
-      mood: 'Good' as const,
-    };
-    addVitalLog({
-      heartRate: base.heartRate,
-      bloodPressureSys: base.bloodPressureSys,
-      bloodPressureDia: base.bloodPressureDia,
-      bloodSugar: base.bloodSugar,
-      bmi: base.bmi,
-      weightKg: base.weightKg,
-      temperatureC: base.temperatureC,
-      spO2: base.spO2,
-      waterIntakeMl: (base.waterIntakeMl || 0) + 250,
-      sleepHours: base.sleepHours,
-      mood: base.mood,
+  const handleQuickWaterAdd = async () => {
+    if (!latestVital) {
+      showToast('Log your baseline vitals first before recording daily water intake.', 'info');
+      setActiveTab('records');
+      return;
+    }
+    await editVitalLog(latestVital.id, {
+      waterIntakeMl: Math.min(20000, (latestVital.waterIntakeMl || 0) + 250),
     });
   };
 
   const displayScore = healthScore ?? 0;
+  const upcomingAppointments = appointments.filter((a) => a.status === 'Upcoming');
+  const activeReminders = reminders.filter((r) => r.active);
 
   return (
     <div className="space-y-6 pb-24 text-white">
@@ -81,8 +66,8 @@ export const DashboardView: React.FC = () => {
             </h1>
             <p className="text-xs sm:text-sm text-neutral-300 mt-1 max-w-lg">
               {latestVital
-                ? 'Your health telemetry is synced with your encrypted Cloud Firestore vault.'
-                : 'Log your first vital measurements to unlock your live Health Index score.'}
+                ? 'Your health telemetry is synced with your protected Cloud Firestore vault.'
+                : 'Log your first vital measurements to compute your personal Health Index score.'}
             </p>
           </div>
 
@@ -155,7 +140,7 @@ export const DashboardView: React.FC = () => {
               <Bot className="w-5 h-5" />
             </div>
             <p className="text-xs font-bold text-white">AI Assistant</p>
-            <p className="text-[10px] text-neutral-400 mt-0.5">Symptoms & Diet</p>
+            <p className="text-[10px] text-neutral-400 mt-0.5">Symptoms &amp; Info</p>
           </button>
 
           <button
@@ -188,7 +173,7 @@ export const DashboardView: React.FC = () => {
               <ShieldAlert className="w-5 h-5" />
             </div>
             <p className="text-xs font-black text-red-400">Emergency SOS</p>
-            <p className="text-[10px] text-red-300 mt-0.5">Instant Ambulance</p>
+            <p className="text-[10px] text-red-300 mt-0.5">SOS &amp; Direct 112/108</p>
           </button>
         </div>
       </div>
@@ -197,7 +182,7 @@ export const DashboardView: React.FC = () => {
       <div>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-xs font-extrabold uppercase tracking-widest text-neutral-400">
-            Today&apos;s Vitals Snapshot
+            Latest Vitals Snapshot
           </h3>
           <button
             onClick={() => setActiveTab('records')}
@@ -256,12 +241,13 @@ export const DashboardView: React.FC = () => {
               <button
                 onClick={handleQuickWaterAdd}
                 className="p-1 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold hover:bg-emerald-500/30 transition"
+                title={latestVital ? 'Add 250mL to latest reading' : 'Record initial vitals first'}
               >
                 +250ml
               </button>
             </div>
             <p className="text-2xl font-black text-white">
-              {latestVital ? (latestVital.waterIntakeMl / 1000).toFixed(1) : '0.0'}{' '}
+              {latestVital ? (latestVital.waterIntakeMl / 1000).toFixed(1) : '--'}{' '}
               <span className="text-xs font-normal text-neutral-400">L / 3.0L</span>
             </p>
             <div className="w-full bg-neutral-800 h-1.5 rounded-full mt-2 overflow-hidden">
@@ -281,14 +267,14 @@ export const DashboardView: React.FC = () => {
         <div className="p-5 rounded-3xl bg-[#181818] border border-white/10 space-y-4">
           <div className="flex items-center justify-between">
             <h4 className="text-sm font-bold text-white flex items-center gap-2">
-              <Pill className="w-4 h-4 text-emerald-400" /> Today&apos;s Medicine Reminders
+              <Pill className="w-4 h-4 text-emerald-400" /> Active Medicine Reminders ({activeReminders.length})
             </h4>
             <button onClick={() => setActiveTab('reminders')} className="text-xs font-bold text-emerald-400 hover:underline">
               Schedule
             </button>
           </div>
 
-          {reminders.length === 0 ? (
+          {activeReminders.length === 0 ? (
             <div className="text-center py-6 space-y-2">
               <p className="text-xs text-neutral-400">No active medication reminders.</p>
               <button
@@ -300,17 +286,17 @@ export const DashboardView: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-2.5">
-              {reminders.map((rem) => (
-                <div key={rem.id} className="flex items-center justify-between p-3 rounded-2xl bg-neutral-900 border border-white/5">
-                  <div>
-                    <p className="text-xs font-bold text-white">{rem.name}</p>
-                    <p className="text-[10px] text-neutral-400">
+              {activeReminders.slice(0, 4).map((rem) => (
+                <div key={rem.id} className="flex items-center justify-between p-3 rounded-2xl bg-neutral-900 border border-white/5 gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-white truncate">{rem.name}</p>
+                    <p className="text-[10px] text-neutral-400 truncate">
                       {rem.dosage} • {rem.timeSlots.join(', ')} ({rem.instructions})
                     </p>
                   </div>
                   <button
                     onClick={() => toggleReminderTaken(rem.id)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 shrink-0 ${
                       rem.takenToday
                         ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                         : 'bg-neutral-800 text-neutral-300 hover:bg-neutral-700'
@@ -328,14 +314,14 @@ export const DashboardView: React.FC = () => {
         <div className="p-5 rounded-3xl bg-[#181818] border border-white/10 space-y-4">
           <div className="flex items-center justify-between">
             <h4 className="text-sm font-bold text-white flex items-center gap-2">
-              <CalendarCheck className="w-4 h-4 text-amber-400" /> Scheduled Consultations
+              <CalendarCheck className="w-4 h-4 text-amber-400" /> Upcoming Consultations ({upcomingAppointments.length})
             </h4>
             <button onClick={() => setActiveTab('appointments')} className="text-xs font-bold text-amber-400 hover:underline">
               Find Doctors
             </button>
           </div>
 
-          {appointments.length === 0 ? (
+          {upcomingAppointments.length === 0 ? (
             <div className="text-center py-6 space-y-2">
               <p className="text-xs text-neutral-400">No upcoming appointments scheduled.</p>
               <button
@@ -347,15 +333,15 @@ export const DashboardView: React.FC = () => {
             </div>
           ) : (
             <div className="space-y-2.5">
-              {appointments.slice(0, 3).map((app) => (
-                <div key={app.id} className="p-3.5 rounded-2xl bg-neutral-900 border border-white/5 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+              {upcomingAppointments.slice(0, 3).map((app) => (
+                <div key={app.id} className="p-3.5 rounded-2xl bg-neutral-900 border border-white/5 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-3 min-w-0">
                     {app.doctorPhoto && (
-                      <img src={app.doctorPhoto} alt={app.doctorName} className="w-11 h-11 rounded-xl object-cover" />
+                      <img src={app.doctorPhoto} alt={app.doctorName} className="w-11 h-11 rounded-xl object-cover shrink-0" />
                     )}
-                    <div>
-                      <p className="text-xs font-bold text-white">{app.doctorName}</p>
-                      <p className="text-[10px] text-amber-400">
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white truncate">{app.doctorName}</p>
+                      <p className="text-[10px] text-amber-400 truncate">
                         {app.doctorSpecialty} • {app.type}
                       </p>
                       <p className="text-[10px] text-neutral-400 mt-0.5 flex items-center gap-1">
@@ -363,7 +349,7 @@ export const DashboardView: React.FC = () => {
                       </p>
                     </div>
                   </div>
-                  <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 text-[10px] font-bold border border-emerald-500/20">
+                  <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 text-[10px] font-bold border border-emerald-500/20 shrink-0">
                     {app.status}
                   </span>
                 </div>
