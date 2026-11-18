@@ -79,7 +79,7 @@ export const Header: React.FC = () => {
           </div>
           <div>
             <div className="flex items-center gap-1.5">
-              <span className="text-xl font-extrabold tracking-tight bg-gradient-to-r from-white via-neutral-200 to-emerald-400 bg-clip-text text-transparent">
+              <span className="text-xl font-extrabold tracking-tight text-white">
                 HealthCare<span className="text-emerald-400">+</span>
               </span>
               <span className="px-1.5 py-0.5 text-[10px] font-bold tracking-wider uppercase bg-amber-500/10 text-amber-400 border border-amber-500/30 rounded-md">

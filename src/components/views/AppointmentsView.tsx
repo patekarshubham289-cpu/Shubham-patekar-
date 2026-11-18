@@ -367,6 +367,9 @@ export const AppointmentsView: React.FC = () => {
                     <img
                       src={docItem.photo}
                       alt={docItem.name}
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).style.display = 'none';
+                      }}
                       className="w-16 h-16 rounded-2xl object-cover ring-2 ring-cyan-500/30 shrink-0"
                     />
                   )}
@@ -419,7 +422,14 @@ export const AppointmentsView: React.FC = () => {
 
             <div className="flex items-center gap-3 pb-3 border-b border-white/10">
               {selectedDoctor.photo && (
-                <img src={selectedDoctor.photo} alt={selectedDoctor.name} className="w-12 h-12 rounded-xl object-cover" />
+                <img
+                  src={selectedDoctor.photo}
+                  alt={selectedDoctor.name}
+                  onError={(e) => {
+                    (e.currentTarget as HTMLImageElement).style.display = 'none';
+                  }}
+                  className="w-12 h-12 rounded-xl object-cover shrink-0"
+                />
               )}
               <div className="space-y-1">
                 <h3 className="text-base font-black text-white">{selectedDoctor.name}</h3>

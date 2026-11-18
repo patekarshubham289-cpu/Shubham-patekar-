@@ -60,7 +60,7 @@ export const demoSampleDoctors: Doctor[] = [
     rating: 4.88,
     reviewCount: 219,
     feeUsd: 900,
-    photo: 'https://images.unsplash.com/photo-1594824813566-78a0a9310a01?auto=format&fit=crop&q=80&w=400',
+    photo: 'https://images.unsplash.com/photo-1594824476967-48c8b964273f?auto=format&fit=crop&q=80&w=400',
     address: 'Demo Sample Clinic, Deccan Gymkhana, Pune, Maharashtra 411004',
     lat: 18.5167,
     lng: 73.8419,

@@ -335,7 +335,14 @@ export const AdminView: React.FC = () => {
                     <tr key={d.id} className="hover:bg-neutral-900/50 transition">
                       <td className="py-3 pr-3 font-bold text-white flex items-center gap-2">
                         {d.photo && (
-                          <img src={d.photo} alt={d.name} className="w-8 h-8 rounded-lg object-cover" />
+                          <img
+                            src={d.photo}
+                            alt={d.name}
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).style.display = 'none';
+                            }}
+                            className="w-8 h-8 rounded-lg object-cover shrink-0"
+                          />
                         )}
                         <div>
                           <p>{d.name}</p>
